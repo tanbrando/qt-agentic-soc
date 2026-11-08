@@ -1,0 +1,14 @@
+agent_id: "agent-linux-node-01"
+hostname: "node-01.production.corp"
+server_url: "http://127.0.0.1:8000"
+batch_size: 25
+flush_interval_seconds: 3
+
+monitored_files:
+  - path: "/var/log/auth.log"
+    log_type: "auth"
+  - path: "/var/log/syslog"
+    log_type: "syslog"
+  - path: "/var/log/apache2/access.log"
+    log_type: "apache"
+
