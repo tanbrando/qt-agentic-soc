@@ -1,196 +1,133 @@
-# Agentic SOC Platform (MVP)
+# Agentic SOC Platform (ASP – SIEM Core)
 
-Production-ready, highly extensible Python skeleton and data contracts for an **Agentic SOC (Security Operations Center) Platform**.
-
-Built on **Clean Architecture (Domain-Driven Design)** principles, decoupling telemetry ingestion, log parsing, correlation rules, incident storage, and autonomous AI agent investigations.
+Hệ thống SIEM thu thập, chuẩn hóa ECS, phát hiện mối đe dọa bằng YAML Rule Engine, gom **Alert** thành **Case** trên PostgreSQL, và chừa giao diện bàn giao cho lớp AI Agentic (Phase 6).
 
 ---
 
-## 🏛 Architecture Overview
-
-```mermaid
-flowchart LR
-    subgraph Edge["Client Collector (Edge)"]
-        Tail["Log Tailer (collector.py)"] --> EdgeParser["Light Edge Parser"]
-    end
-
-    subgraph Server["SOC Server (Modular Monolith)"]
-        API["FastAPI Ingest & Cases API"]
-        IngestSvc["IngestionService"]
-        ParserReg["ParserRegistry\n(@register Auth, Syslog, Apache, ...)"]
-        LogRepo["ILogRepository\n(InMemory / Postgres / ES)"]
-        
-        subgraph Engine["Detection Engine"]
-            RuleEngine["RuleEngine Orchestrator"]
-            Stateless["Stateless Rules (SudoAbuseRule)"]
-            Stateful["Stateful Rules (SSHBruteForceRule)"]
-            StateStore["ISlidingWindowStore"]
-        end
-
-        AlertRepo["IAlertRepository\n(Alert & Case Storage)"]
-
-        subgraph Agent["AI Agent Investigation"]
-            Investigator["IAgentInvestigator"]
-            Tools["SecurityAgentTools\n(search_logs, check_ip_reputation)"]
-            TI["IThreatIntelProvider\n(Mock / AbuseIPDB / VT)"]
-        end
-    end
-
-    EdgeParser -->|POST /api/v1/ingest/logs| API
-    API --> IngestSvc
-    IngestSvc --> ParserReg
-    IngestSvc --> LogRepo
-    IngestSvc --> RuleEngine
-    RuleEngine --> Stateless
-    RuleEngine --> Stateful
-    Stateful <--> StateStore
-    RuleEngine -->|Alerts| AlertRepo
-    AlertRepo -->|POST /investigate| Investigator
-    Investigator --> Tools
-    Tools --> LogRepo
-    Tools --> TI
-```
-
----
-
-## 📁 Project Structure
+## 1. Cấu trúc gọn của dự án
 
 ```text
 qt-agentic-soc/
+├── .env.example                 # Mẫu biến môi trường duy nhất (copy thành .env để chạy)
+├── client_setup.sh              # Cài .venv-client trên Ubuntu/Linux và chạy thu thập log
+├── server_setup.sh              # Cài venv Server, chạy migration DB và bật Uvicorn
+├── requirements.txt             # Thư viện Python cho Server & Test
 ├── client/
-│   ├── config.yaml                    # Edge collector configuration
-│   ├── collector.py                   # File tailer with byte offset tracking & batch flusher
-│   └── parsers.py                     # Fast client-side light regex parser
+│   ├── collector.py             # Agent mỏng đọc log theo (device, inode, stream_id, offset) + spool
+│   ├── config.yaml              # Cấu hình mẫu collector (client_parse: false)
+│   └── parsers.py               # Parser dự phòng phía client (tắt mặc định)
+├── migrations/                  # DDL PostgreSQL đánh số 001..003 (events_raw append-only)
+├── rules/                       # 6 rule phát hiện dạng YAML (match, event_count, value_count, sequence)
+├── samples/                     # Bộ log mẫu dương/âm cho parser và rule
+├── scripts/
+│   └── demo_attack.py           # Kịch bản mô phỏng tấn công SSH/sudo/HTTP 404
+├── tools/
+│   ├── asp_migrate.py           # Áp dụng SQL migrations (idempotent)
+│   ├── asp_admin.py             # Tạo/thu hồi/xoay agent API key & operator token
+│   ├── asp_reparse.py           # Parse lại từ events_raw -> events
+│   └── asp_logtest.py           # Test nhanh parser + YAML rule offline
 ├── server/
-│   ├── main.py                        # FastAPI server entrypoint
+│   ├── main.py                  # FastAPI entrypoint (chạy --workers 1)
 │   └── src/
-│       ├── common/
-│       │   └── schemas.py             # Pydantic v2 Contracts (Hybrid ECS-style envelope)
-│       ├── parsers/
-│       │   ├── base.py                # BaseLogParser & Plugin ParserRegistry
-│       │   └── auth_parser.py         # AuthLogParser (sshd, sudo, useradd, pam)
-│       ├── engine/
-│       │   ├── base.py                # BaseRule & RuleEngine orchestrator
-│       │   ├── state_store.py         # ISlidingWindowStore (Event-time deque window)
-│       │   └── rules/
-│       │       ├── sudo_abuse.py      # Stateless sudo failure / not in sudoers rule
-│       │       └── ssh_bruteforce.py  # Stateful 5-min sliding window SSH brute force rule
-│       ├── repositories/
-│       │   ├── base.py                # ILogRepository & IAlertRepository contracts
-│       │   └── memory.py              # In-memory async implementations for dev & test
-│       ├── agent/
-│       │   ├── base.py                # IThreatIntelProvider & IAgentInvestigator
-│       │   ├── tools.py               # search_logs & check_ip_reputation (@tool ready)
-│       │   └── workflow.py            # Autonomous AI triage, TI enrichment & report generation
-│       ├── services/
-│       │   └── ingestion_service.py   # Core pipeline orchestrating ingestion, rules & cases
-│       └── api/
-│           ├── dependencies.py        # Dependency injection container
-│           └── v1/
-│               ├── ingest.py          # POST /api/v1/ingest/logs
-│               └── cases.py           # GET /api/v1/cases, POST /api/v1/cases/{id}/investigate
-├── tests/
-│   ├── test_schemas.py                # Schema validation & serialization tests
-│   ├── test_auth_parser.py            # Log parser unit tests
-│   ├── test_rules.py                  # Stateful & stateless detection rule tests
-│   └── test_integration.py            # End-to-end pipeline & API endpoint integration tests
-├── .env.example                       # Environment variables template
-├── .gitignore                         # Comprehensive Git ignore rules
-├── pyproject.toml                     # Python project metadata & tool configurations
-└── requirements.txt                   # Production & testing dependencies
+│       ├── common/              # schemas.py (ECS v1.1 + Alert/Case), config.py, security.py
+│       ├── parsers/             # auth_parser, apache_parser, syslog_parser (hàm thuần)
+│       ├── engine/              # loader.py, generic_rules.py, state_store.py, recovery.py
+│       ├── repositories/        # memory.py & postgres.py (psycopg v3 đồng bộ)
+│       ├── services/            # ingestion_service.py (raw-first, lock, case lifecycle)
+│       ├── api/                 # v1/ingest.py, alerts.py, events.py, cases.py + auth
+│       └── agent/               # Khung bàn giao Phase 6 (AI Agentic)
+├── docs/                        # handover-phase6.md, demo.md, final-review.md, phase0-report.md
+└── tests/                       # Bộ test tự động pytest (InMemory + PostgreSQL)
 ```
 
 ---
 
-## 🚀 Quickstart Guide
+## 2. Cấu hình `.env` hợp nhất
 
-### 1. Requirements & Setup
-- Python 3.10+
-- Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+Chỉ dùng **một file `.env` duy nhất** (copy từ `.env.example`, không commit lên Git):
 
-### 2. Run the Automated Test Suite
-To run all 21 unit and integration tests:
-```bash
-python -m pytest tests -v
-```
-
-### 3. Start the SOC Ingest & Case Server
-```bash
-python server/main.py
-```
-Or via Uvicorn directly:
-```bash
-uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
-```
-Interactive Swagger API documentation will be available at:
-`http://127.0.0.1:8000/docs`
-
-### 4. Run the Edge Collector Agent
-Configure monitored files in `client/config.yaml`, then start:
-```bash
-python client/collector.py
-```
+| Biến                                                                                                                                                    | Nhóm           | Ý nghĩa                                                                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `ASP_DB_URL`                                                                                                                                           | Server & Tools  | Chuỗi kết nối PostgreSQL (`postgresql://postgres:<MAT_KHAU>@localhost:5432/asp_db`)                                        |
+| `SOC_SERVER_HOST`, `SOC_SERVER_PORT`, `SOC_LOG_LEVEL`                                                                                              | Server          | Địa chỉ, cổng lắng nghe và mức log server                                                                                |
+| `ASP_DEFAULT_TIMEZONE`, `ASP_FUTURE_TS_TOLERANCE`, `ASP_ALLOWED_LATENESS`, `ASP_CASE_IDLE_TIMEOUT`, `ASP_RULES_DIR`, `ASP_RATE_LIMIT_INGEST` | Server Engine   | Múi giờ mặc định, ngưỡng thời gian tương lai/đến muộn, timeout đóng case, thư mục rule YAML, rate limit ingest |
+| `ASP_SERVER_URL`, `ASP_AGENT_ID`, `ASP_VERIFY_TLS`                                                                                                 | Client          | URL server nhận log, ID của agent (khớp DB), bật/tắt kiểm tra TLS                                                         |
+| `ASP_AGENT_API_KEY`                                                                                                                                    | Client          | API key của agent (sinh bằng `tools/asp_admin.py create-agent`)                                                             |
+| `ASP_OP_TOKEN`                                                                                                                                         | SOC / API đọc | Token operator để gọi `/api/v1/alerts`, `/events`, `/cases`, `/investigate`                                          |
 
 ---
 
-## 🔌 Extensibility Guide
+## 3. Setup & Chạy Phía Server (Windows)
 
-### 1. Adding a New Log Source (e.g., Apache Access Log)
-1. Create a parser in `server/src/parsers/apache_parser.py`:
-```python
-from server.src.parsers.base import BaseLogParser, ParserRegistry
-from server.src.common.schemas import LogType
+Server ASP chạy trên môi trường **Windows** (kết nối PostgreSQL 17 local). Các bước thực hiện tuần tự như sau:
 
-@ParserRegistry.register
-class ApacheLogParser(BaseLogParser):
-    @property
-    def supported_log_type(self) -> LogType:
-        return LogType.APACHE
+### Bước 3.1: Khởi động Server (`setup\server_setup.bat`)
 
-    def can_handle(self, log_type: str, source_path: str = "") -> bool:
-        return log_type == LogType.APACHE.value or "access.log" in source_path
+Mở CMD (hoặc PowerShell) tại thư mục dự án và chạy:
 
-    def parse_line(self, raw_line: str) -> Optional[Dict[str, Any]]:
-        # Regex or grok extraction
-        return {"service": "apache", "http_status": 200, "src_ip": "1.2.3.4"}
+```cmd
+# Chạy tự động: tạo .venv, cài requirements.txt, nạp .env, chạy migration và start server:
+setup\server_setup.bat
+
+# Hoặc chỉ tạo venv, cài thư viện và migrate DB (không bật server ngay):
+setup\server_setup.bat --setup-only
 ```
-*No modifications to pipeline or ingestion service needed!*
 
-### 2. Adding a New Detection Rule
-Create a rule inheriting from `BaseRule`:
-```python
-from server.src.engine.base import BaseRule
-from server.src.common.schemas import Alert, LogEventEnvelope, Severity, LogType
+### Bước 3.2: Đăng ký Agent Client & Tự động cập nhật `.env` (`setup\create_newClient.bat`)
 
-class WebScanningRule(BaseRule):
-    rule_id = "RULE-WEB-SCAN-001"
-    rule_name = "Web Vulnerability Scan Detected"
-    severity = Severity.MEDIUM
-    supported_log_types = {LogType.APACHE}
+**Trước khi chuyển sang máy Ubuntu thu thập log**, bạn chạy file `.bat` này trên Windows CMD để cấp quyền cho Agent:
 
-    def evaluate(self, event: LogEventEnvelope) -> Optional[Alert]:
-        if event.fields.get("http_status") == 404:
-            # sliding window or pattern matching
-            pass
-        return None
+```cmd
+# Cách 1: Chỉ gõ lệnh không truyền tham số (script sẽ dừng lại hỏi bạn nhập tên, hoặc nhấn Enter để lấy mặc định 'web-01'):
+setup\create_newClient.bat
+
+# Cách 2: Truyền trực tiếp tên máy muốn tạo (ví dụ web-02):
+setup\create_newClient.bat web-02
 ```
-Register the rule in `server/src/api/dependencies.py` container.
 
-### 3. Swapping Persistence (e.g., PostgreSQL or Elasticsearch)
-Implement `ILogRepository` and `IAlertRepository` in `server/src/repositories/postgres.py` and inject into `Container` in `dependencies.py`. All domain logic and rules remain 100% unchanged.
+**Cơ chế hoạt động của `create_newClient.bat`:**
+
+1. Kết nối PostgreSQL (`asp_db`), kiểm tra xem `AgentId` đã tồn tại chưa:
+   - **Nếu chưa có:** Thêm mới bản ghi vào bảng `agents`.
+   - **Nếu đã có:** Tự động xoay khóa (rotate key) mới và mở lại quyền.
+2. Sinh ngẫu nhiên chuỗi `API Key` an toàn và lưu bản băm SHA-256 vào database.
+3. **Tự động ghi đè ngay `ASP_AGENT_ID` và `ASP_AGENT_API_KEY` mới vào file `.env`** (không cần copy - paste thủ công).
+4. In thông tin ra màn hình để bạn đối chiếu.
+
+*(Lưu ý: Nếu agent client chạy từ WSL2 gửi sang server Windows, mở inbound port `8000` trên Windows Firewall bằng PowerShell Administrator: `New-NetFirewallRule -DisplayName "ASP Server from WSL" -InterfaceAlias "vEthernet (WSL)" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow`.)*
 
 ---
 
-## 📡 API Reference Summary
+## 4. Setup & Chạy Phía Client Thu Thập Log (Ubuntu / WSL)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/health` | Service health status |
-| `POST` | `/api/v1/ingest/logs` | Ingests a batch of telemetry envelopes, normalizes & detects |
-| `GET` | `/api/v1/cases` | Lists open/investigating security cases |
-| `GET` | `/api/v1/cases/{case_id}` | Gets full case details, correlated alerts & artifacts |
-| `POST` | `/api/v1/cases/{case_id}/investigate` | Triggers autonomous AI SOC Analyst investigation |
+Sau khi Bước 3.2 đã cập nhật `ASP_AGENT_ID` và `ASP_AGENT_API_KEY` vào `.env`:
 
+1. Copy toàn bộ thư mục dự án (hoặc file `.env`) sang máy Ubuntu (nếu dùng chung trên WSL thì thư mục đã có sẵn tại `/mnt/d/ATTT/CK/qt-agentic-soc`).
+2. Mở terminal trên Ubuntu và chỉ cần chạy 1 lệnh duy nhất:
+
+```bash
+# Khởi chạy thu thập log ngay (tự tạo .venv-client nếu là lần đầu chạy):
+bash setup/client_setup.sh
+
+# Hoặc chỉ cài đặt môi trường .venv-client và cấu hình (chưa gửi log ngay):
+bash setup/client_setup.sh --setup-only
+```
+
+**Script `client_setup.sh` tự động làm gì?**
+
+1. Tạo môi trường ảo riêng `.venv-client` (không đè lên `.venv` của Windows) và chỉ cài 3 gói nhẹ: `requests`, `pyyaml`, `pydantic`.
+2. Đọc `.env` (tự xử lý ký tự `\r` nếu file được sửa từ Windows).
+3. Sinh cấu hình chạy `$HOME/asp-agent-config.yaml` (quyền `0600`) trỏ `state_file` và `spool_dir` về `$HOME/.asp-agent/` (ext4 Linux) và lấy `server_url`, `agent_id`, `verify_tls` từ `.env`.
+4. Chạy `client/collector.py --config "$HOME/asp-agent-config.yaml"`.
+
+*(Lưu ý trên Ubuntu: user chạy `client_setup.sh` cần thuộc nhóm `adm` để đọc `/var/log/auth.log` và `/var/log/syslog`.)*
+
+---
+
+## 5. Tài liệu tham khảo nhanh khác
+
+- Test toàn bộ hệ thống: `.\.venv\Scripts\python.exe -m pytest -v`
+- Kiểm thử rule YAML offline: `python tools/asp_logtest.py --file samples/rules/ssh_bruteforce_pos.log --type auth`
+- Hướng dẫn demo chi tiết: [docs/demo.md](file:///d:/ATTT/CK/qt-agentic-soc/docs/demo.md)
+- Tài liệu bàn giao cho team AI Agentic SOC: [docs/AGENTIC_SOC_HANDOVER.md](file:///d:/ATTT/CK/qt-agentic-soc/docs/AGENTIC_SOC_HANDOVER.md)
+- Đánh giá thiết kế & giới hạn: [docs/final-review.md](file:///d:/ATTT/CK/qt-agentic-soc/docs/final-review.md)

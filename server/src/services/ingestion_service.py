@@ -1,33 +1,40 @@
 """
-Ingestion Service Orchestrator.
-Coordinates log parsing/enrichment, storage, rule detection, and incident case correlation.
+Ingestion Service Orchestrator (Synchronous).
+Coordinates atomic raw+parsed storage, post-commit rule detection under lock,
+and alert/case correlation.
 """
 
 from __future__ import annotations
 
-from typing import List
-from uuid import UUID, uuid4
+import logging
+import threading
+from datetime import datetime, timezone
+from typing import Optional
 
 from server.src.common.schemas import (
     Alert,
-    AlertStatus,
     Case,
+    CaseStatus,
     IngestBatchRequest,
     IngestBatchResponse,
-    LogEventEnvelope,
 )
 from server.src.engine.base import RuleEngine
 from server.src.parsers.base import ParserRegistry
 from server.src.repositories.base import IAlertRepository, ILogRepository
 
+logger = logging.getLogger(__name__)
+
+_LEVEL_RANKS = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+
 
 class IngestionService:
     """
-    Core pipeline service that:
-    1. Normalizes raw logs via ParserRegistry (Hybrid parsing fallback).
-    2. Persists events to ILogRepository.
-    3. Feeds normalized events to the RuleEngine.
-    4. Correlates firing Alerts into security Cases.
+    Core synchronous pipeline service:
+    1. Transactionally inserts raw events into events_raw (ON CONFLICT DO NOTHING),
+       parses only newly inserted rows, and stores normalized ECSEvent into events.
+    2. After commit, sorts newly ingested events by timestamp and runs RuleEngine
+       under a shared threading.Lock. Engine errors are logged and never fail ingest.
+    3. Saves non-duplicate alerts and correlates them to open cases.
     """
 
     def __init__(
@@ -35,63 +42,77 @@ class IngestionService:
         log_repository: ILogRepository,
         alert_repository: IAlertRepository,
         rule_engine: RuleEngine,
+        engine_lock: Optional[threading.Lock] = None,
+        default_timezone: str = "Asia/Ho_Chi_Minh",
+        future_tolerance_seconds: int = 300,
+        case_idle_timeout_seconds: int = 21_600,
     ) -> None:
         self.log_repo = log_repository
         self.alert_repo = alert_repository
         self.rule_engine = rule_engine
+        self._engine_lock = engine_lock or threading.Lock()
+        self._default_timezone = default_timezone
+        self._future_tolerance_seconds = future_tolerance_seconds
+        self._case_idle_timeout_seconds = case_idle_timeout_seconds
 
-    async def ingest_batch(self, batch: IngestBatchRequest) -> IngestBatchResponse:
-        """Processes an incoming batch of log envelopes."""
-        processed_events: List[LogEventEnvelope] = []
+    def ingest_batch(self, batch: IngestBatchRequest) -> IngestBatchResponse:
+        """Processes an incoming batch of raw log events."""
+        ingested_at = datetime.now(timezone.utc)
 
-        # 1. Normalization & parsing fallback
-        for event in batch.events:
-            if not event.fields:
-                event = ParserRegistry.parse_or_fallback(event)
-            processed_events.append(event)
+        def _parse_with_server_cfg(raw_ev, agent, uid, ts_ingested):
+            return ParserRegistry.parse_raw_event(
+                raw_event=raw_ev,
+                agent=agent,
+                event_uid=uid,
+                ingested_at=ts_ingested,
+                default_timezone=self._default_timezone,
+                future_tolerance_seconds=self._future_tolerance_seconds,
+            )
 
-        # 2. Persist raw/normalized events
-        await self.log_repo.save_events(processed_events)
+        # 1. Atomic raw-first insert, deduplication, parse, and events insert
+        outcome = self.log_repo.save_batch_with_parser(
+            batch=batch,
+            parser_fn=_parse_with_server_cfg,
+            ingested_at=ingested_at,
+        )
 
-        # 3. Detection evaluation
-        alerts = self.rule_engine.evaluate_batch(processed_events)
-
-        # 4. Alert & Case Correlation
-        affected_case_ids: List[UUID] = []
-        for alert in alerts:
-            await self.alert_repo.save_alert(alert)
-            case = await self._correlate_alert_to_case(alert)
-            if case.case_id not in affected_case_ids:
-                affected_case_ids.append(case.case_id)
+        # 2. Post-commit Rule Engine evaluation on new events only, sorted by ts
+        if outcome.new_events:
+            ordered_events = sorted(outcome.new_events, key=lambda ev: ev.timestamp)
+            try:
+                with self._engine_lock:
+                    alerts = self.rule_engine.evaluate_batch(ordered_events)
+                    for alert in alerts:
+                        self._persist_and_correlate_alert(alert)
+            except Exception:
+                logger.exception(
+                    "Post-commit rule evaluation failed for batch_id=%s",
+                    batch.batch_id,
+                )
 
         return IngestBatchResponse(
-            accepted_count=len(processed_events),
-            alerts_generated=len(alerts),
-            case_ids=affected_case_ids,
-            status="ok",
+            accepted=len(outcome.new_events),
+            duplicates=outcome.duplicate_count,
+            unparsed=outcome.unparsed_count,
+            parse_errors=outcome.parse_error_count,
         )
 
-    async def _correlate_alert_to_case(self, alert: Alert) -> Case:
-        """Groups alert into an existing open case matching dedup_key, or creates a new one."""
-        if alert.dedup_key:
-            existing_case = await self.alert_repo.find_case_by_dedup_key(alert.dedup_key)
-            if existing_case:
-                existing_case.alerts.append(alert)
-                # Keep highest severity
-                severity_ranks = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
-                if severity_ranks.get(alert.severity.value, 0) > severity_ranks.get(existing_case.severity.value, 0):
-                    existing_case.severity = alert.severity
-                await self.alert_repo.save_case(existing_case)
-                return existing_case
+    def _derive_case_key(self, alert: Alert) -> tuple[str, Optional[str]]:
+        src_ip = alert.group_key.get("source.ip")
+        if src_ip:
+            return f"ip:{src_ip}", str(src_ip)
+        host_name = alert.group_key.get("host.name")
+        user_name = alert.group_key.get("user.name")
+        if host_name and user_name:
+            return f"host:{host_name}|user:{user_name}", None
+        return f"alert:{alert.alert_key}", None
 
-        # Create new Case
-        new_case = Case(
-            case_id=uuid4(),
-            title=f"Security Incident: {alert.rule_name} on {alert.hostname}",
-            severity=alert.severity,
-            status=AlertStatus.OPEN,
-            alerts=[alert],
+    def _persist_and_correlate_alert(self, alert: Alert) -> Optional[Case]:
+        """Inserts alert (ON CONFLICT DO NOTHING) and correlates to an open case with idle timeout."""
+        case_key, src_ip = self._derive_case_key(alert)
+        return self.alert_repo.correlate_alert_to_case(
+            alert=alert,
+            case_key=case_key,
+            source_ip=src_ip,
+            idle_timeout_seconds=self._case_idle_timeout_seconds,
         )
-        await self.alert_repo.save_case(new_case)
-        return new_case
-

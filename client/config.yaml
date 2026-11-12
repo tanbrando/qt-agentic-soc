@@ -1,14 +1,25 @@
-agent_id: "agent-linux-node-01"
-hostname: "node-01.production.corp"
-server_url: "http://127.0.0.1:8000"
-batch_size: 25
-flush_interval_seconds: 3
-
-monitored_files:
-  - path: "/var/log/auth.log"
-    log_type: "auth"
-  - path: "/var/log/syslog"
-    log_type: "syslog"
-  - path: "/var/log/apache2/access.log"
-    log_type: "apache"
-
+agent_id: web-01
+server_url: http://127.0.0.1:8000
+ingest_path: /api/v1/ingest/logs
+api_key_env: ASP_AGENT_API_KEY
+verify_tls: true
+ca_file: null
+timezone: auto
+start_position: end
+state_file: /var/lib/asp-agent/state.json
+spool_dir: /var/lib/asp-agent/spool
+spool_max_mb: 500
+poll_interval_seconds: 0.5
+batch_max_events: 100
+batch_max_bytes: 900000
+batch_max_seconds: 2
+max_line_bytes: 16384
+http_timeout_seconds: 10
+client_parse: false
+sources:
+  - path: /var/log/auth.log
+    log_type: auth
+  - path: /var/log/syslog
+    log_type: syslog
+  # - path: /var/log/apache2/access.log
+  #   log_type: apache

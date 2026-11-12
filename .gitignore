@@ -29,6 +29,8 @@ MANIFEST
 # Virtual Environments
 .env
 .venv
+.venv-client/
+.venv-server/
 env/
 venv/
 ENV/

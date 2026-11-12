@@ -1,0 +1,150 @@
+Nov 10 23:45:08 DESKTOP-T9H4SPL kernel: [   11.336758] misc dxg: dxgk: dxgkio_query_adapter_info: Ioctl failed: -2
+Nov 10 23:45:08 DESKTOP-T9H4SPL kernel: [   11.345987] misc dxg: dxgk: dxgkio_query_adapter_info: Ioctl failed: -22
+Nov 10 23:45:08 DESKTOP-T9H4SPL kernel: [   11.348197] misc dxg: dxgk: dxgkio_query_adapter_info: Ioctl failed: -22
+Nov 10 23:45:08 DESKTOP-T9H4SPL kernel: [   11.352035] misc dxg: dxgk: dxgkio_query_adapter_info: Ioctl failed: -22
+Nov 10 23:45:08 DESKTOP-T9H4SPL kernel: [   11.354969] misc dxg: dxgk: dxgkio_query_adapter_info: Ioctl failed: -2
+Nov 10 23:45:08 DESKTOP-T9H4SPL systemd[1]: Started Bridge to Ubuntu Pro agent on Windows.
+Nov 10 23:45:08 DESKTOP-T9H4SPL snapd[190]: standby.go:95: will consider standby after: 5s
+Nov 10 23:45:08 DESKTOP-T9H4SPL systemd[1]: Started Snap Daemon.
+Nov 10 23:45:08 DESKTOP-T9H4SPL dbus-daemon[182]: [system] Activating via systemd: service name='org.freedesktop.timedate1' unit='dbus-org.freedesktop.timedate1.service' requested by ':1.10' (uid=0 pid=190 comm="/usr/lib/snapd/snapd " label="kernel")
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] Starting MariaDB 10.6.23-MariaDB-0ubuntu0.22.04.1 source revision fe8047caf26d20e98ea7f6ec1dce3924e696703f server_uid a0ASiUmVL4NbQykwY5FTdL4RQDI= as process 289
+Nov 10 23:45:08 DESKTOP-T9H4SPL systemd[1]: Starting Time & Date Service...
+Nov 10 23:45:08 DESKTOP-T9H4SPL dbus-daemon[182]: [system] Successfully activated service 'org.freedesktop.timedate1'
+Nov 10 23:45:08 DESKTOP-T9H4SPL systemd[1]: Started Time & Date Service.
+Nov 10 23:45:08 DESKTOP-T9H4SPL systemd[1]: Finished Wait until snapd is fully seeded.
+Nov 10 23:45:08 DESKTOP-T9H4SPL systemd[1]: Condition check resulted in Auto import assertions from block devices being skipped.
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Compressed tables use zlib 1.2.11
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Number of pools: 1
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Using crc32 + pclmulqdq instructions
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Using liburing
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Initializing buffer pool, total size = 134217728, chunk size = 134217728
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Completed initialization of buffer pool
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Starting crash recovery from checkpoint LSN=38623918,38623918
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: 128 rollback segments are active.
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Removed temporary tablespace data file: "./ibtmp1"
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Creating shared tablespace for temporary tables
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Setting file './ibtmp1' size to 12 MB. Physically writing the file full; Please wait ...
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: File './ibtmp1' size is now 12 MB.
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: 10.6.23 started; log sequence number 38623930; transaction id 11331
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] Plugin 'FEEDBACK' is disabled.
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Loading buffer pool(s) from /var/lib/mysql/ib_buffer_pool
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Warning] You need to use --log-bin to make --expire-logs-days or --binlog-expire-logs-seconds work.
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] Server socket created on IP: '127.0.0.1'.
+Nov 10 23:45:08 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:08 0 [Note] InnoDB: Buffer pool(s) load completed at 261110 23:45:08
+Nov 10 23:45:09 DESKTOP-T9H4SPL mariadbd[289]: 2026-11-10 23:45:09 0 [Note] /usr/sbin/mariadbd: ready for connections.
+Nov 10 23:45:09 DESKTOP-T9H4SPL mariadbd[289]: Version: '10.6.23-MariaDB-0ubuntu0.22.04.1'  socket: '/run/mysqld/mysqld.sock'  port: 3306  Ubuntu 22.04
+Nov 10 23:45:09 DESKTOP-T9H4SPL systemd[1]: Started MariaDB 10.6.23 database server.
+Nov 10 23:45:09 DESKTOP-T9H4SPL /etc/mysql/debian-start[352]: Upgrading MySQL tables if necessary.
+Nov 10 23:45:09 DESKTOP-T9H4SPL /etc/mysql/debian-start[355]: Looking for 'mariadb' as: /usr/bin/mariadb
+Nov 10 23:45:09 DESKTOP-T9H4SPL /etc/mysql/debian-start[355]: Looking for 'mariadb-check' as: /usr/bin/mariadb-check
+Nov 10 23:45:09 DESKTOP-T9H4SPL /etc/mysql/debian-start[355]: This installation of MariaDB is already upgraded to 10.6.22-MariaDB.
+Nov 10 23:45:09 DESKTOP-T9H4SPL /etc/mysql/debian-start[355]: There is no need to run mysql_upgrade again for 10.6.23-MariaDB, because they're both 10.6.
+Nov 10 23:45:09 DESKTOP-T9H4SPL /etc/mysql/debian-start[355]: You can use --force if you still want to run mysql_upgrade
+Nov 10 23:45:09 DESKTOP-T9H4SPL /etc/mysql/debian-start[366]: Checking for insecure root accounts.
+Nov 10 23:45:09 DESKTOP-T9H4SPL /etc/mysql/debian-start[370]: Triggering myisam-recover for all MyISAM tables and aria-recover for all Aria tables
+Nov 10 23:45:09 DESKTOP-T9H4SPL landscape-config[185]: Registered:    False
+Nov 10 23:45:09 DESKTOP-T9H4SPL landscape-config[185]: Config Path:   /etc/landscape/client.conf
+Nov 10 23:45:09 DESKTOP-T9H4SPL landscape-config[185]: Data Path      /var/lib/landscape/client
+Nov 10 23:45:09 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:45:10 DESKTOP-T9H4SPL systemd[1]: landscape-client.service: Skipped due to 'exec-condition'.
+Nov 10 23:45:10 DESKTOP-T9H4SPL systemd[1]: Condition check resulted in Landscape client daemons being skipped.
+Nov 10 23:45:10 DESKTOP-T9H4SPL systemd[1]: landscape-client.service: Consumed 2.178s CPU time.
+Nov 10 23:45:10 DESKTOP-T9H4SPL snapd[190]: snapmgr.go:1675: performing periodic snap downloads cache cleanup
+Nov 10 23:45:10 DESKTOP-T9H4SPL snapd[190]: snapmgr.go:1685: cannot clean store downloads cache: open /var/lib/snapd/cache: no such file or directory
+Nov 10 23:45:10 DESKTOP-T9H4SPL snapd[190]: autorepair.go:177: WARNING: the system booted with an old initrd without unlocked status reporting
+Nov 10 23:45:10 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:48:29 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:48:29 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:48:29 DESKTOP-T9H4SPL systemd[1]: dmesg.service: Deactivated successfully.
+Nov 10 23:48:29 DESKTOP-T9H4SPL avahi-daemon[178]: Withdrawing address record for fe80::215:5dff:fe23:f07f on eth0.
+Nov 10 23:48:29 DESKTOP-T9H4SPL avahi-daemon[178]: Withdrawing address record for 172.19.255.140 on eth0.
+Nov 10 23:48:29 DESKTOP-T9H4SPL avahi-daemon[178]: Withdrawing address record for 10.255.255.254 on lo.
+Nov 10 23:48:29 DESKTOP-T9H4SPL avahi-daemon[178]: Host name conflict, retrying with DESKTOP-T9H4SPL-2
+Nov 10 23:48:29 DESKTOP-T9H4SPL avahi-daemon[178]: Registering new address record for fe80::215:5dff:fe23:f07f on eth0.*.
+Nov 10 23:48:29 DESKTOP-T9H4SPL avahi-daemon[178]: Registering new address record for 172.19.255.140 on eth0.IPv4.
+Nov 10 23:48:29 DESKTOP-T9H4SPL avahi-daemon[178]: Registering new address record for ::1 on lo.*.
+Nov 10 23:48:29 DESKTOP-T9H4SPL avahi-daemon[178]: Registering new address record for 10.255.255.254 on lo.IPv4.
+Nov 10 23:45:13 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:45:13 DESKTOP-T9H4SPL snapd[190]: standby.go:101: standby conditions met, initiating standby...
+Nov 10 23:45:13 DESKTOP-T9H4SPL snapd[190]: daemon.go:569: gracefully waiting for running hooks
+Nov 10 23:45:13 DESKTOP-T9H4SPL snapd[190]: daemon.go:571: done waiting for running hooks
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: Started PostgreSQL Cluster 14-main.
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: Starting PostgreSQL RDBMS...
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: Finished PostgreSQL RDBMS.
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: Reached target Multi-User System.
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: Reached target Graphical Interface.
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: Starting Record Runlevel Change in UTMP...
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: systemd-update-utmp-runlevel.service: Deactivated successfully.
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: Finished Record Runlevel Change in UTMP.
+Nov 10 23:45:14 DESKTOP-T9H4SPL systemd[1]: Startup finished in 8.255s.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[1]: Created slice User Slice of UID 1000.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[1]: Starting User Runtime Directory /run/user/1000...
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[1]: Finished User Runtime Directory /run/user/1000.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[1]: Starting User Manager for UID 1000...
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Queued start job for default target Main User Target.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Created slice User Application Slice.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Reached target Paths.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Reached target Timers.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Listening on GnuPG network certificate management daemon.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Listening on GnuPG cryptographic agent and passphrase cache (access for web browsers).
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Listening on GnuPG cryptographic agent and passphrase cache (restricted).
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Listening on GnuPG cryptographic agent (ssh-agent emulation).
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Listening on GnuPG cryptographic agent and passphrase cache.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Listening on debconf communication socket.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Listening on REST API socket for snapd user session agent.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Reached target Sockets.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Reached target Basic System.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Reached target Main User Target.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[1]: Started User Manager for UID 1000.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[1]: Started Session 1 of User cun.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Starting WSLg user service...
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Finished WSLg user service.
+Nov 10 23:45:15 DESKTOP-T9H4SPL systemd[561]: Startup finished in 291ms.
+Nov 10 23:45:16 DESKTOP-T9H4SPL snapd[190]: standby.go:121: standby monitoring stop requested
+Nov 10 23:45:16 DESKTOP-T9H4SPL snapd[190]: overlord.go:568: Released state lock file
+Nov 10 23:45:16 DESKTOP-T9H4SPL snapd[190]: daemon stop requested to wait for socket activation
+Nov 10 23:45:16 DESKTOP-T9H4SPL systemd[1]: snapd.service: Deactivated successfully.
+Nov 10 23:45:16 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:48:34 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:45:23 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 3 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:45:24 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:45:26 DESKTOP-T9H4SPL kernel: [   11.896111] WSL (269) ERROR: CheckConnection: getaddrinfo() failed: -5
+Nov 10 23:45:26 DESKTOP-T9H4SPL kernel: [   29.011391] TCP: eth0: Driver has suspect GRO implementation, TCP performance may be compromised.
+Nov 10 23:48:44 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:45:38 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 5 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:45:38 DESKTOP-T9H4SPL systemd[1]: systemd-timedated.service: Deactivated successfully.
+Nov 10 23:45:40 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:48:59 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:45:43 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:45:44 DESKTOP-T9H4SPL CRON[911]: (root) CMD (command -v debian-sa1 > /dev/null && debian-sa1 1 1)
+Nov 10 23:45:45 DESKTOP-T9H4SPL kernel: [   48.798489] hv_balloon: Max. dynamic memory size: 2998 MB
+Nov 10 23:49:04 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:49:29 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 10 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:49:29 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:46:13 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:50:29 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 23 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:50:29 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:47:13 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:47:38 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 10 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:50:59 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:51:29 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 12 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:51:29 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:48:13 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:48:28 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 6 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:48:30 DESKTOP-T9H4SPL avahi-daemon[178]: Server startup complete. Host name is DESKTOP-T9H4SPL-2.local. Local service cookie is 62346652.
+Nov 10 23:51:49 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:52:29 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 16 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:52:29 DESKTOP-T9H4SPL wsl-pro-service[197]: #033[33mWARNING#033[0m Daemon: could not connect to Windows Agent: could not get address: could not read agent port file "/mnt/c/Users/Admin/.ubuntupro/.address": open /mnt/c/Users/Admin/.ubuntupro/.address: no such file or directory
+Nov 10 23:49:13 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:49:38 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 10 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:52:59 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:49:58 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 7 times: [ Clock change detected. Flushing caches.]
+Nov 10 23:49:58 DESKTOP-T9H4SPL systemd[1]: Starting Message of the Day...
+Nov 10 23:50:00 DESKTOP-T9H4SPL 50-motd-news[1988]:  * Canonical Workshop gives developers fast, composable, reproducible, and
+Nov 10 23:50:00 DESKTOP-T9H4SPL 50-motd-news[1988]:    secure developer environments that are perfect for agentic workflows.
+Nov 10 23:50:00 DESKTOP-T9H4SPL 50-motd-news[1988]:    https://ubuntu.com/workshop
+Nov 10 23:50:00 DESKTOP-T9H4SPL systemd[1]: motd-news.service: Deactivated successfully.
+Nov 10 23:50:00 DESKTOP-T9H4SPL systemd[1]: Finished Message of the Day.
+Nov 10 23:50:00 DESKTOP-T9H4SPL systemd[1]: motd-news.service: Consumed 1.030s CPU time.
+Nov 10 23:53:19 DESKTOP-T9H4SPL systemd-resolved[116]: Clock change detected. Flushing caches.
+Nov 10 23:50:09 DESKTOP-T9H4SPL systemd-resolved[116]: message repeated 3 times: [ Clock change detected. Flushing caches.]

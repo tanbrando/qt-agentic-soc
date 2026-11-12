@@ -1,5 +1,5 @@
 """
-Interfaces for Threat Intelligence Providers and Agent Investigation Workflows.
+Interfaces for Threat Intelligence Providers and Agent Investigation Workflows (Synchronous).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ class IThreatIntelProvider(ABC):
     """Abstract interface for external Threat Intelligence lookup (AbuseIPDB, VirusTotal, etc.)."""
 
     @abstractmethod
-    async def lookup_ip(self, ip: str) -> Dict[str, Any]:
+    def lookup_ip(self, ip: str) -> Dict[str, Any]:
         """Queries external reputation for an IP address."""
         pass
 
@@ -30,7 +30,7 @@ class MockThreatIntelProvider(IThreatIntelProvider):
         "45.33.32.156": {"score": 75.0, "vendor": "VirusTotal", "reports": 35, "country": "US"},
     }
 
-    async def lookup_ip(self, ip: str) -> Dict[str, Any]:
+    def lookup_ip(self, ip: str) -> Dict[str, Any]:
         if ip in self.KNOWN_MALICIOUS_IPS:
             data = self.KNOWN_MALICIOUS_IPS[ip]
             return {
@@ -41,7 +41,6 @@ class MockThreatIntelProvider(IThreatIntelProvider):
                 "details": data,
             }
 
-        # Check for private / RFC1918 IPs
         if ip.startswith(("10.", "192.168.", "172.16.", "127.", "::1")):
             return {
                 "ip": ip,
@@ -51,7 +50,6 @@ class MockThreatIntelProvider(IThreatIntelProvider):
                 "details": {"type": "private_network"},
             }
 
-        # Neutral default score for unknown internet IPs
         return {
             "ip": ip,
             "reputation_score": 15.0,
@@ -65,7 +63,6 @@ class IAgentInvestigator(ABC):
     """Abstract orchestrator for autonomous agent investigation on a security case."""
 
     @abstractmethod
-    async def investigate_case(self, case: Case) -> AgentReportUpdate:
+    def investigate_case(self, case: Case) -> AgentReportUpdate:
         """Runs the agent workflow to investigate the case and generate a conclusion."""
         pass
-

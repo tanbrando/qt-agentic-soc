@@ -1,0 +1,14 @@
+id: asp-sudo-abuse
+title: Lạm dụng hoặc thất bại xác thực sudo
+level: medium
+tags:
+  - attack.t1548.003
+  - T1548.003
+selection:
+  event.action:
+    - sudo_not_in_sudoers
+    - sudo_bad_password
+    - sudo_auth_failed
+detection:
+  type: match
+

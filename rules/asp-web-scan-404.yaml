@@ -1,0 +1,17 @@
+id: asp-web-scan-404
+title: Quét web (nhiều 404 từ một IP)
+level: medium
+tags:
+  - attack.t1595.003
+cooldown: 10m
+selection:
+  event.action: http_request
+  http.response.status_code: 404
+detection:
+  type: event_count
+  group_by:
+    - source.ip
+  timespan: 1m
+  condition:
+    gte: 30
+
