@@ -1,0 +1,12 @@
+id: asp-sudo-to-root-shell
+title: Sudo mở shell root
+level: medium
+tags:
+  - attack.t1548.003
+selection:
+  event.action: sudo_command
+  asp.sudo_target_user: root
+  process.args|re: '^(/usr)?/bin/((ba|da|z)?sh|su)(\s|$)'
+detection:
+  type: match
+

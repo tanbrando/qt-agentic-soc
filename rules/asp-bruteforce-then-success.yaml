@@ -1,0 +1,19 @@
+id: asp-bruteforce-then-success
+title: Brute force rồi đăng nhập thành công
+level: critical
+tags:
+  - attack.t1110
+cooldown: 30m
+detection:
+  type: sequence
+  group_by:
+    - source.ip
+  timespan: 10m
+  steps:
+    - selection:
+        event.action: ssh_login_failed
+      min_count: 5
+    - selection:
+        event.action: ssh_login_success
+      min_count: 1
+

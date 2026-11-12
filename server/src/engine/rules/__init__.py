@@ -1,5 +1,3 @@
-from server.src.engine.rules.sudo_abuse import SudoAbuseRule
-from server.src.engine.rules.ssh_bruteforce import SSHBruteForceRule
+"""YAML rules are stored in the top-level rules/ directory."""
 
-__all__ = ["SudoAbuseRule", "SSHBruteForceRule"]
-
+__all__: list[str] = []

@@ -1,16 +1,46 @@
 """
-Data Contracts and Pydantic v2 Models for the Agentic SOC Platform.
-Follows a Hybrid ECS-style (Elastic Common Schema) envelope pattern.
+Data Contracts and Pydantic v2 Models for the ASP (Agentic SOC Platform).
+Follows the v1.1 Ingestion Envelope (Section 5), ECS Subset Event Schema (Section 6),
+and PostgreSQL DDL Contracts (Section 8.3).
 """
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+def _ensure_utc(v: Optional[datetime]) -> Optional[datetime]:
+    """Enforces UTC timezone on aware or naive datetimes."""
+    if v is None:
+        return None
+    if v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v.astimezone(timezone.utc)
+
+
+def compute_event_id(
+    agent_id: str,
+    device: int,
+    inode: int,
+    stream_id: str,
+    offset: int,
+) -> str:
+    """
+    Computes deterministic SHA-1 hex identifier (event.id / event_uid):
+    sha1(agent_id|device|inode|stream_id|offset).
+    """
+    raw_key = f"{agent_id}|{device}|{inode}|{stream_id}|{offset}".encode("utf-8")
+    return hashlib.sha1(raw_key).hexdigest()
 
 
 # ============================================================================
@@ -22,6 +52,7 @@ class LogType(str, Enum):
     AUTH = "auth"
     SYSLOG = "syslog"
     APACHE = "apache"
+    AUDIT = "audit"
     KERNEL = "kernel"
     PACKAGE = "package"
 
@@ -33,24 +64,37 @@ class EventOutcome(str, Enum):
     UNKNOWN = "unknown"
 
 
-class Severity(str, Enum):
-    """SOC alert and case severity tiers."""
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-    CRITICAL = "CRITICAL"
+class ParseStatus(str, Enum):
+    """Server-side parser outcome stored in asp.parse_status."""
+    OK = "ok"
+    UNPARSED = "unparsed"
+    ERROR = "error"
+
+
+class AlertLevel(str, Enum):
+    """SOC alert and case severity tiers (lowercase per DDL Section 8.3)."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 
 class AlertStatus(str, Enum):
-    """Case and alert triage lifecycle status."""
-    OPEN = "OPEN"
-    INVESTIGATING = "INVESTIGATING"
-    RESOLVED = "RESOLVED"
-    FALSE_POSITIVE = "FALSE_POSITIVE"
+    """Alert triage lifecycle status (defaults to 'new' per DDL Section 8.3)."""
+    NEW = "new"
+    ACKNOWLEDGED = "acknowledged"
+    RESOLVED = "resolved"
+    FALSE_POSITIVE = "false_positive"
+
+
+class CaseStatus(str, Enum):
+    """Case lifecycle status per DDL Section 8.3."""
+    OPEN = "open"
+    CLOSED = "closed"
 
 
 class ArtifactType(str, Enum):
-    """Observable security artifact (Indicator of Compromise / Observable)."""
+    """Observable security artifact (retained for Phase 6 compatibility)."""
     IP = "IP"
     USER = "USER"
     PROCESS = "PROCESS"
@@ -60,115 +104,295 @@ class ArtifactType(str, Enum):
 
 
 class AgentVerdict(str, Enum):
-    """AI SOC Analyst conclusion."""
+    """AI SOC Analyst conclusion (retained for Phase 6 compatibility)."""
     TRUE_POSITIVE = "True Positive"
     FALSE_POSITIVE = "False Positive"
     INCONCLUSIVE = "Inconclusive"
 
 
 # ============================================================================
-# Client Ingestion Contracts
+# Client Ingestion Contracts (Section 5)
 # ============================================================================
 
-class LogEventEnvelope(BaseModel):
-    """
-    Standardized telemetry envelope ingested from edge agents or collector services.
-    Preserves raw log line for cryptographic / forensic auditability.
-    """
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
-
-    event_id: UUID = Field(
-        default_factory=uuid4,
-        description="Unique identifier for this log event",
-    )
-    timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="ISO 8601 timestamp with timezone when the event occurred",
-    )
-    agent_id: str = Field(..., min_length=1, description="Host agent collector ID")
-    hostname: str = Field(..., min_length=1, description="Source endpoint hostname")
-    log_type: LogType = Field(..., description="Classification category of the log")
-    source_file: str = Field(..., min_length=1, description="Source path (e.g., /var/log/auth.log)")
-    raw: str = Field(..., description="Verbatim raw log line")
-    fields: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Parsed normalized attributes (e.g. service, pid, src_ip, user, event_outcome)",
-    )
-
-    @field_validator("timestamp", mode="after")
-    @classmethod
-    def ensure_timezone_aware(cls, v: datetime) -> datetime:
-        """Enforces UTC if timezone information was missing."""
-        if v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
-        return v.astimezone(timezone.utc)
-
-    def get_field(self, key: str, default: Any = None) -> Any:
-        """Helper to safely access parsed fields."""
-        return self.fields.get(key, default)
-
-
-class IngestBatchRequest(BaseModel):
-    """Batch ingestion payload sent by endpoint collector agents."""
+class RawEventFileMeta(BaseModel):
+    """File tailing metadata attached by the thin Linux collector agent."""
     model_config = ConfigDict(extra="ignore")
 
-    agent_id: str = Field(..., min_length=1)
-    client_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    batch_size: int = Field(..., ge=1, le=10000)
-    events: List[LogEventEnvelope] = Field(..., min_length=1)
+    path: str = Field(..., min_length=1)
+    device: int = Field(..., ge=0)
+    inode: int = Field(..., ge=0)
+    stream_id: str = Field(..., min_length=1)
+    offset: int = Field(..., ge=0)
 
-    @field_validator("batch_size", mode="after")
+
+class RawLogEvent(BaseModel):
+    """Single raw log line and collection metadata sent inside an ingest batch."""
+    model_config = ConfigDict(extra="ignore")
+
+    log_type: LogType
+    file: RawEventFileMeta
+    collected_at: datetime
+    message: str
+    message_truncated: bool = False
+
+    @field_validator("collected_at", mode="after")
     @classmethod
-    def validate_batch_size_matches(cls, v: int, info) -> int:
-        events = info.data.get("events")
-        if events is not None and len(events) != v:
-            # Synchronize or accept as count
-            return len(events)
+    def _normalize_collected_at(cls, v: datetime) -> datetime:
+        normalized = _ensure_utc(v)
+        assert normalized is not None
+        return normalized
+
+
+class AgentMetadata(BaseModel):
+    """Source agent metadata included in the batch envelope."""
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(..., min_length=1)
+    hostname: str = Field(..., min_length=1)
+    version: str = Field(..., min_length=1)
+    ip: List[str] = Field(default_factory=list)
+    timezone: Optional[str] = None
+
+    @field_validator("timezone", mode="after")
+    @classmethod
+    def _validate_iana_timezone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Invalid IANA timezone: {v!r}") from exc
         return v
 
 
+class IngestBatchRequest(BaseModel):
+    """
+    Batch ingestion payload sent by endpoint collector agents (POST /api/v1/ingest/logs).
+    Note: Max 500 events / 1 MB limit is enforced at the API layer to return HTTP 413 instead of 422.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    schema_version: str = Field(default="1.1", min_length=1)
+    batch_id: str = Field(..., min_length=1)
+    sent_at: datetime
+    agent: AgentMetadata
+    events: List[RawLogEvent] = Field(..., min_length=1)
+
+    @field_validator("sent_at", mode="after")
+    @classmethod
+    def _normalize_sent_at(cls, v: datetime) -> datetime:
+        normalized = _ensure_utc(v)
+        assert normalized is not None
+        return normalized
+
+    def event_id_for(self, raw_event: RawLogEvent) -> str:
+        """Computes the deterministic SHA-1 event.id for an event in this batch."""
+        return compute_event_id(
+            agent_id=self.agent.id,
+            device=raw_event.file.device,
+            inode=raw_event.file.inode,
+            stream_id=raw_event.file.stream_id,
+            offset=raw_event.file.offset,
+        )
+
+
 class IngestBatchResponse(BaseModel):
-    """Server response acknowledging received batch."""
-    accepted_count: int
-    alerts_generated: int = 0
-    case_ids: List[UUID] = Field(default_factory=list)
-    status: str = "ok"
+    """HTTP 202 response acknowledging batch processing metrics (Section 5)."""
+    accepted: int = Field(..., ge=0)
+    duplicates: int = Field(default=0, ge=0)
+    unparsed: int = Field(default=0, ge=0)
+    parse_errors: int = Field(default=0, ge=0)
 
 
 # ============================================================================
-# Security Detection & Case Management Contracts
+# Normalized ECS Subset Event Contracts (Section 6)
+# ============================================================================
+
+class EcsVersionInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    version: str = "8.11"
+
+
+class EcsEventMeta(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(..., min_length=1)
+    kind: str = "event"
+    category: List[str] = Field(..., min_length=1)
+    type: List[str] = Field(..., min_length=1)
+    action: str = Field(..., min_length=1)
+    outcome: Optional[EventOutcome] = None
+    dataset: str = Field(..., min_length=1)
+    original: str
+    created: datetime
+    ingested: datetime
+
+    @field_validator("created", "ingested", mode="after")
+    @classmethod
+    def _normalize_dt(cls, v: datetime) -> datetime:
+        normalized = _ensure_utc(v)
+        assert normalized is not None
+        return normalized
+
+
+class EcsHostInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(..., min_length=1)
+    ip: List[str] = Field(default_factory=list)
+
+
+class EcsAgentInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(..., min_length=1)
+    type: str = "asp-agent"
+    version: str = Field(..., min_length=1)
+
+
+class EcsLogFileInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    path: str = Field(..., min_length=1)
+
+
+class EcsLogInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    file: EcsLogFileInfo
+
+
+class EcsEndpointInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    ip: Optional[str] = None
+    port: Optional[int] = Field(default=None, ge=0, le=65535)
+
+
+class EcsUserInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str = Field(..., min_length=1)
+
+
+class EcsProcessInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: Optional[str] = None
+    pid: Optional[int] = Field(default=None, ge=0)
+    args: Optional[str] = None
+
+
+class EcsHttpRequestInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    method: Optional[str] = None
+
+
+class EcsHttpResponseInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    status_code: Optional[int] = Field(default=None, ge=100, le=599)
+
+
+class EcsHttpInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    request: Optional[EcsHttpRequestInfo] = None
+    response: Optional[EcsHttpResponseInfo] = None
+
+
+class EcsUrlInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    original: Optional[str] = None
+
+
+class EcsUserAgentInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    original: Optional[str] = None
+
+
+class EcsRelatedInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    ip: List[str] = Field(default_factory=list)
+    user: List[str] = Field(default_factory=list)
+
+
+class AspMetaInfo(BaseModel):
+    """ASP-specific parsing metadata stored under 'asp'."""
+    model_config = ConfigDict(extra="allow")
+
+    parse_status: ParseStatus
+    parser: Optional[str] = None
+    auth_method: Optional[str] = None
+    sudo_target_user: Optional[str] = None
+    ts_clamped: Optional[bool] = None
+    message_truncated: Optional[bool] = None
+
+
+class ECSEvent(BaseModel):
+    """
+    Normalized ECS-subset event stored in the `events` table (`doc` JSONB + indexed columns).
+    """
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    timestamp: datetime = Field(..., alias="@timestamp")
+    ecs: EcsVersionInfo = Field(default_factory=EcsVersionInfo)
+    event: EcsEventMeta
+    host: EcsHostInfo
+    agent: EcsAgentInfo
+    log: Optional[EcsLogInfo] = None
+    source: Optional[EcsEndpointInfo] = None
+    user: Optional[EcsUserInfo] = None
+    process: Optional[EcsProcessInfo] = None
+    http: Optional[EcsHttpInfo] = None
+    url: Optional[EcsUrlInfo] = None
+    user_agent: Optional[EcsUserAgentInfo] = None
+    related: Optional[EcsRelatedInfo] = None
+    message: Optional[str] = None
+    asp: AspMetaInfo
+
+    @field_validator("timestamp", mode="after")
+    @classmethod
+    def _normalize_timestamp(cls, v: datetime) -> datetime:
+        normalized = _ensure_utc(v)
+        assert normalized is not None
+        return normalized
+
+    def to_ecs_dict(self) -> Dict[str, Any]:
+        """Serializes to ECS JSON dict with '@timestamp' alias and None fields omitted."""
+        return self.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
+# ============================================================================
+# Security Detection & Case Management Contracts (Section 8.3)
 # ============================================================================
 
 class Alert(BaseModel):
     """
-    Security alert produced by the detection engine when a rule condition is satisfied.
+    Security alert produced by the detection engine, aligned with `alerts` DDL (Section 8.3).
     """
     model_config = ConfigDict(extra="ignore")
 
-    alert_id: UUID = Field(default_factory=uuid4)
-    rule_id: Optional[str] = Field(default=None, description="Identifier of the firing rule")
-    rule_name: str = Field(..., min_length=1)
-    severity: Severity = Field(...)
-    hostname: str = Field(..., min_length=1)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    context: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Detailed contextual attributes (e.g. attacker IP, target user, failure count)",
-    )
-    evidence_raw_events: List[UUID] = Field(
-        default_factory=list,
-        description="Correlated LogEventEnvelope event IDs that triggered this alert",
-    )
-    mitre_tactics: List[str] = Field(default_factory=list, description="MITRE ATT&CK Tactics (e.g. TA0006)")
-    mitre_techniques: List[str] = Field(default_factory=list, description="MITRE ATT&CK Techniques (e.g. T1110)")
-    dedup_key: Optional[str] = Field(
-        default=None,
-        description="Correlation key used to group related alerts into the same case",
-    )
+    id: Optional[int] = None
+    alert_key: str = Field(..., min_length=1)
+    rule_id: str = Field(..., min_length=1)
+    title: Optional[str] = None
+    level: AlertLevel
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    window_start: Optional[datetime] = None
+    window_end: Optional[datetime] = None
+    group_key: Dict[str, Any] = Field(default_factory=dict)
+    event_count: int = Field(default=0, ge=0)
+    event_uids: List[str] = Field(default_factory=list, max_length=200)
+    status: AlertStatus = AlertStatus.NEW
+    case_id: Optional[int] = None
+    tags: List[str] = Field(default_factory=list)
+
+    @field_validator("created_at", "window_start", "window_end", mode="after")
+    @classmethod
+    def _normalize_alert_dates(cls, v: Optional[datetime]) -> Optional[datetime]:
+        return _ensure_utc(v)
 
 
 class Artifact(BaseModel):
-    """Extracted observable / Indicator of Compromise (IoC) with threat intel enrichment."""
+    """Extracted observable / IoC (retained for Phase 6 compatibility)."""
     model_config = ConfigDict(extra="ignore")
 
     artifact_type: ArtifactType
@@ -184,7 +408,7 @@ class Artifact(BaseModel):
 
 
 class AgentReportUpdate(BaseModel):
-    """Payload to update a case after automated agent triage."""
+    """Payload to update a case after automated agent triage (Phase 6 compatibility)."""
     agent_verdict: AgentVerdict
     agent_confidence: float = Field(..., ge=0.0, le=1.0)
     agent_report_markdown: str = Field(..., min_length=1)
@@ -193,20 +417,39 @@ class AgentReportUpdate(BaseModel):
 
 class Case(BaseModel):
     """
-    Security incident case grouping one or more alerts, correlated artifacts,
-    and agent investigation reports.
+    Security incident case aligned with `cases` DDL (Section 8.3).
+    Retains optional Phase 6 fields (agent_verdict, agent_confidence, ai_report) defaulting to None.
     """
     model_config = ConfigDict(extra="ignore")
 
-    case_id: UUID = Field(default_factory=uuid4)
-    title: str = Field(..., min_length=1)
-    severity: Severity = Field(...)
-    status: AlertStatus = Field(default=AlertStatus.OPEN)
-    alerts: List[Alert] = Field(default_factory=list)
-    artifacts: List[Artifact] = Field(default_factory=list)
-    agent_verdict: Optional[str] = Field(default=None)
-    agent_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    agent_report_markdown: Optional[str] = Field(default=None)
+    id: Optional[int] = None
+    case_key: str = Field(..., min_length=1)
+    source_ip: Optional[str] = None
+    level: AlertLevel
+    status: CaseStatus = CaseStatus.OPEN
+    first_activity_at: datetime
+    last_activity_at: datetime
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    # Optional AI / Investigation & API-enrichment fields (default None / empty for Phase 6 compatibility)
+    ai_report: Optional[Dict[str, Any]] = None
+    ai_investigated_at: Optional[datetime] = None
+    agent_verdict: Optional[str] = None
+    agent_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    agent_report_markdown: Optional[str] = None
+    title: Optional[str] = None
+    alerts: List[Alert] = Field(default_factory=list)
+    artifacts: List[Artifact] = Field(default_factory=list)
+
+    @field_validator(
+        "first_activity_at",
+        "last_activity_at",
+        "created_at",
+        "updated_at",
+        "ai_investigated_at",
+        mode="after",
+    )
+    @classmethod
+    def _normalize_case_dates(cls, v: Optional[datetime]) -> Optional[datetime]:
+        return _ensure_utc(v)
