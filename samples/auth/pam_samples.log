@@ -1,0 +1,6 @@
+Nov 10 08:30:01 web-01 login[521]: pam_unix(login:session): session opened for user cun(uid=1000) by (uid=0)
+Nov 10 08:30:05 web-01 sshd[522]: pam_unix(sshd:session): session opened for user deploy(uid=1001) by (uid=0)
+Nov 10 08:31:01 web-01 CRON[950]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
+Nov 10 08:31:05 web-01 CRON[950]: pam_unix(cron:session): session closed for user root
+Nov 10 08:32:00 web-01 login[521]: pam_unix(login:session): session closed for user cun
+

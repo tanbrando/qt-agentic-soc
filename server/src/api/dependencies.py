@@ -15,8 +15,8 @@ import psycopg
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from server.src.agent.base import IAgentInvestigator, MockThreatIntelProvider
-from server.src.agent.workflow import DefaultAgentInvestigator
+from server.src.agent.base import IAgentInvestigator
+from server.src.agent.workflow import create_investigator
 from server.src.common.config import ServerConfig, parse_duration_seconds
 from server.src.common.security import InMemoryRateLimiter, hash_secret
 from server.src.engine.base import RuleEngine
@@ -102,11 +102,12 @@ class Container:
             case_idle_timeout_seconds=parse_duration_seconds(cfg.case_idle_timeout),
         )
 
-        self.threat_intel = MockThreatIntelProvider()
-        self.agent_investigator: IAgentInvestigator = DefaultAgentInvestigator(
+        investigator = create_investigator(
             log_repository=self.log_repo,
-            threat_intel=self.threat_intel,
+            alert_repository=self.alert_repo,
         )
+        self.threat_intel = investigator.threat_intel
+        self.agent_investigator: IAgentInvestigator = investigator
 
 
 _container: Optional[Container] = None

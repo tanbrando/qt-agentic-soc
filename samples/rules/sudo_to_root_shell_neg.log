@@ -1,0 +1,4 @@
+Nov 10 08:26:01 web-01 sudo:   ops : TTY=pts/0 ; PWD=/home/ops ; USER=root ; COMMAND=/bin/shutdown -r now
+Nov 10 08:26:02 web-01 sudo:   ops : TTY=pts/0 ; PWD=/home/ops ; USER=root ; COMMAND=/bin/systemctl status nginx
+Nov 10 08:26:03 web-01 sudo:   ops : TTY=pts/0 ; PWD=/home/ops ; USER=nobody ; COMMAND=/bin/sh
+
