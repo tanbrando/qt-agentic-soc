@@ -1,0 +1,6 @@
+Nov 10 08:10:01 web-01 sudo:   ubuntu : TTY=pts/0 ; PWD=/home/ubuntu ; USER=root ; COMMAND=/usr/bin/systemctl restart nginx
+Nov 10 08:10:05 web-01 sudo:    alice : user NOT in sudoers ; TTY=pts/1 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow
+Nov 10 08:10:10 web-01 sudo:    bob : 3 incorrect password attempts ; TTY=pts/2 ; PWD=/home/bob ; USER=root ; COMMAND=/bin/bash
+Nov 10 08:10:15 web-01 sudo: pam_unix(sudo:auth): authentication failure; logname= uid=1000 euid=0 tty=/dev/pts/5 ruser=cun rhost=  user=cun
+Nov 10 08:10:20 web-01 sudo:   deploy : TTY=pts/3 ; PWD=/home/deploy ; USER=root ; COMMAND=/bin/ls -la /var/log
+

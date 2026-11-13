@@ -1,0 +1,6 @@
+Nov 10 08:20:01 web-01 useradd[29100]: new user: name=backdoor_svc, UID=1005, GID=1005, home=/home/backdoor_svc, shell=/bin/bash
+Nov 10 08:20:02 web-01 useradd[29101]: new user: name=ops_temp, UID=1006, GID=1006, home=/home/ops_temp, shell=/bin/sh
+Nov 10 08:20:03 web-01 useradd[29102]: new user: name=audit_ro, UID=1007, GID=1007, home=/home/audit_ro, shell=/usr/sbin/nologin
+Nov 10 08:20:04 web-01 useradd[29103]: new user: name=deploy_bot, UID=1008, GID=1008, home=/home/deploy_bot, shell=/bin/bash
+Nov 10 08:20:05 web-01 useradd[29104]: new user: name=monitor, UID=1009, GID=1009, home=/home/monitor, shell=/bin/false
+

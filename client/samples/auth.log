@@ -1,0 +1,6 @@
+Nov 10 09:36:28 DESKTOP-T9H4SPL login[521]: pam_unix(login:session): session opened for user cun(uid=1000) by (uid=0)
+Nov 10 09:45:01 DESKTOP-T9H4SPL CRON[950]: pam_unix(cron:session): session closed for user root
+Nov 10 09:50:12 DESKTOP-T9H4SPL sshd[1201]: Failed password for root from 203.0.113.77 port 50123 ssh2
+Nov 10 09:55:00 DESKTOP-T9H4SPL sudo: pam_unix(sudo:auth): authentication failure; logname= uid=1000 euid=0 tty=/dev/pts/5 ruser=cun rhost=  user=cun
+Nov 10 09:58:40 DESKTOP-T9H4SPL sudo:   cun : TTY=pts/5 ; PWD=/home/cun ; USER=root ; COMMAND=/usr/bin/id
+

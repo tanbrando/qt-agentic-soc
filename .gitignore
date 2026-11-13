@@ -58,6 +58,12 @@ coverage.xml
 .agent_state/
 *.offset
 *.log
+!samples/**/*.log
+!client/samples/*.log
+
+# Generated investigation reports
+reports/
+!reports/.gitkeep
 
 # IDE & Editor files
 .vscode/

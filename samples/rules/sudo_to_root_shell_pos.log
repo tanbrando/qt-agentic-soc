@@ -1,0 +1,3 @@
+Nov 10 08:25:01 web-01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/bin/bash
+Nov 10 08:25:05 web-01 sudo:   ubuntu : TTY=pts/1 ; PWD=/home/ubuntu ; USER=root ; COMMAND=/bin/su -
+

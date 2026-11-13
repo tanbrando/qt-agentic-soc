@@ -1,0 +1,4 @@
+Nov 10 08:30:01 web-01 sudo:   alice : user NOT in sudoers ; TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow
+Nov 10 08:30:05 web-01 sudo:   bob : 3 incorrect password attempts ; TTY=pts/1 ; PWD=/home/bob ; USER=root ; COMMAND=/usr/bin/id
+Nov 10 08:30:10 web-01 sudo: pam_unix(sudo:auth): authentication failure; logname= uid=1000 euid=0 tty=/dev/pts/2 ruser=cun rhost=  user=cun
+
