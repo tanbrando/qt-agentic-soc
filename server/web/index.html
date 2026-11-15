@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic SOC Platform — Command Center</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Header -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">🛡️</div>
+        <div>
+          <h1 class="brand-title">Agentic SOC Platform</h1>
+          <p class="brand-subtitle">Autonomous Telemetry, Correlation &amp; AI Forensic Console</p>
+        </div>
+      </div>
+
+      <nav class="nav-tabs" role="tablist" aria-label="Primary sections">
+        <button class="nav-tab active" data-tab="cases" role="tab" aria-selected="true">
+          Overview &amp; Cases
+        </button>
+        <button class="nav-tab" data-tab="alerts" role="tab" aria-selected="false">
+          Alerts Explorer
+        </button>
+        <button class="nav-tab" data-tab="events" role="tab" aria-selected="false">
+          ECS Events
+        </button>
+      </nav>
+
+      <div class="topbar-actions">
+        <div id="health-pill" class="status-pill status-unknown" title="Server Health (/api/v1/health)">
+          <span class="dot"></span>
+          <span id="health-text">Checking...</span>
+        </div>
+
+        <label class="toggle-wrap" title="Tự động cập nhật mỗi 10 giây">
+          <input type="checkbox" id="auto-refresh-toggle" />
+          <span>Auto 10s</span>
+        </label>
+
+        <button id="refresh-btn" class="btn btn-secondary btn-sm" type="button">
+          ↻ Refresh
+        </button>
+
+        <button id="token-btn" class="btn btn-primary btn-sm" type="button">
+          🔑 <span id="token-btn-label">Operator Token</span>
+        </button>
+
+        <a href="/docs" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm" title="Swagger OpenAPI Docs">
+          API Docs ↗
+        </a>
+      </div>
+    </header>
+
+    <!-- Global Toast / Error Banner -->
+    <div id="alert-banner" class="alert-banner hidden" role="status">
+      <span id="alert-banner-msg"></span>
+      <button id="alert-banner-close" class="icon-btn" type="button" aria-label="Đóng thông báo">✕</button>
+    </div>
+
+    <!-- Missing Token Prompt Banner -->
+    <section id="auth-empty-state" class="auth-empty hidden">
+      <div class="auth-empty-card">
+        <h2>Cần nhập Operator Token để truy cập dữ liệu SOC</h2>
+        <p>
+          Các API <code>/api/v1/cases</code>, <code>/alerts</code> và <code>/events</code> được bảo vệ bởi Bearer Token
+          (<code>ASP_OP_TOKEN</code> trong file <code>.env</code>). Token chỉ lưu cục bộ trong <code>localStorage</code> của trình duyệt.
+        </p>
+        <button id="auth-empty-open-btn" class="btn btn-primary" type="button">
+          Nhập ASP_OP_TOKEN ngay
+        </button>
+      </div>
+    </section>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+      <!-- ==================== TAB 1: OVERVIEW & CASES ==================== -->
+      <section id="tab-cases" class="tab-panel active">
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+          <article class="kpi-card">
+            <div class="kpi-label">Total Cases</div>
+            <div id="kpi-total-cases" class="kpi-value">0</div>
+            <div id="kpi-open-cases" class="kpi-sub">0 open / 0 closed</div>
+          </article>
+          <article class="kpi-card kpi-danger">
+            <div class="kpi-label">Critical &amp; High Cases</div>
+            <div id="kpi-high-cases" class="kpi-value">0</div>
+            <div id="kpi-critical-count" class="kpi-sub">0 critical severity</div>
+          </article>
+          <article class="kpi-card kpi-accent">
+            <div class="kpi-label">AI Investigated</div>
+            <div id="kpi-ai-cases" class="kpi-value">0</div>
+            <div id="kpi-tp-count" class="kpi-sub">0 True Positive</div>
+          </article>
+          <article class="kpi-card">
+            <div class="kpi-label">Correlated Alerts</div>
+            <div id="kpi-total-alerts" class="kpi-value">0</div>
+            <div id="kpi-last-sync" class="kpi-sub">Last sync: --</div>
+          </article>
+        </div>
+
+        <!-- Visual Breakdown Row -->
+        <div class="breakdown-grid">
+          <div class="panel breakdown-card">
+            <div class="panel-header-sm">Severity Breakdown</div>
+            <div id="severity-bars" class="bar-list"></div>
+          </div>
+          <div class="panel breakdown-card">
+            <div class="panel-header-sm">AI Verdict Breakdown</div>
+            <div id="verdict-bars" class="bar-list"></div>
+          </div>
+        </div>
+
+        <!-- Cases Filter Bar -->
+        <form id="cases-filter-form" class="filter-bar">
+          <div class="filter-group">
+            <label for="filter-case-status">Status</label>
+            <select id="filter-case-status">
+              <option value="">All Status</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="filter-case-level">Severity</label>
+            <select id="filter-case-level">
+              <option value="">All Levels</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="filter-case-ip">Source IP</label>
+            <input id="filter-case-ip" type="text" placeholder="e.g. 203.0.113.77" />
+          </div>
+          <div class="filter-group filter-grow">
+            <label for="filter-case-search">Search Title / Case Key</label>
+            <input id="filter-case-search" type="text" placeholder="SSH brute force, ip:..." />
+          </div>
+          <div class="filter-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            <button id="cases-filter-reset" type="button" class="btn btn-secondary btn-sm">Reset</button>
+          </div>
+        </form>
+
+        <!-- Split-Pane Cases Workspace -->
+        <div class="cases-workspace">
+          <!-- Left: Queue -->
+          <aside class="panel case-queue-panel">
+            <div class="panel-header">
+              <h2>Incident Cases (<span id="cases-count-label">0</span>)</h2>
+            </div>
+            <div id="case-queue-list" class="case-queue-list">
+              <div class="empty-placeholder">Chưa có dữ liệu Case.</div>
+            </div>
+          </aside>
+
+          <!-- Right: Case Detail -->
+          <section id="case-detail-panel" class="panel case-detail-panel">
+            <div id="case-detail-empty" class="empty-placeholder">
+              Chọn một Case ở danh sách bên trái để xem chi tiết điều tra và chạy AI Agent.
+            </div>
+            <div id="case-detail-content" class="hidden"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 2: ALERTS EXPLORER ==================== -->
+      <section id="tab-alerts" class="tab-panel hidden">
+        <form id="alerts-filter-form" class="filter-bar">
+          <div class="filter-group">
+            <label for="filter-alert-rule">Rule ID</label>
+            <select id="filter-alert-rule">
+              <option value="">All Rules</option>
+              <option value="asp-ssh-bruteforce">asp-ssh-bruteforce</option>
+              <option value="asp-bruteforce-then-success">asp-bruteforce-then-success</option>
+              <option value="asp-password-spraying">asp-password-spraying</option>
+              <option value="asp-sudo-abuse">asp-sudo-abuse</option>
+              <option value="asp-sudo-to-root-shell">asp-sudo-to-root-shell</option>
+              <option value="asp-web-scan-404">asp-web-scan-404</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="filter-alert-level">Level</label>
+            <select id="filter-alert-level">
+              <option value="">All Levels</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="filter-alert-status">Status</label>
+            <select id="filter-alert-status">
+              <option value="">All Status</option>
+              <option value="new">New</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="resolved">Resolved</option>
+              <option value="false_positive">False Positive</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="filter-alert-case">Case ID</label>
+            <input id="filter-alert-case" type="number" min="1" placeholder="e.g. 1" />
+          </div>
+          <div class="filter-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            <button id="alerts-filter-reset" type="button" class="btn btn-secondary btn-sm">Reset</button>
+          </div>
+        </form>
+
+        <div class="panel table-panel">
+          <div class="panel-header">
+            <h2>Detection Alerts (<span id="alerts-count-label">0</span>)</h2>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Severity</th>
+                  <th>Rule ID</th>
+                  <th>Title</th>
+                  <th>Group Key</th>
+                  <th>Events</th>
+                  <th>Window End</th>
+                  <th>Status</th>
+                  <th>Case</th>
+                </tr>
+              </thead>
+              <tbody id="alerts-table-body">
+                <tr><td colspan="9" class="empty-cell">Chưa có alert nào.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 3: ECS EVENTS VIEWER ==================== -->
+      <section id="tab-events" class="tab-panel hidden">
+        <form id="events-filter-form" class="filter-bar">
+          <div class="filter-group">
+            <label for="filter-event-ip">Source IP</label>
+            <input id="filter-event-ip" type="text" placeholder="e.g. 203.0.113.77" />
+          </div>
+          <div class="filter-group">
+            <label for="filter-event-user">User Name</label>
+            <input id="filter-event-user" type="text" placeholder="e.g. root" />
+          </div>
+          <div class="filter-group">
+            <label for="filter-event-action">Event Action</label>
+            <input id="filter-event-action" type="text" placeholder="e.g. ssh_login_failed" />
+          </div>
+          <div class="filter-group">
+            <label for="filter-event-dataset">Dataset</label>
+            <select id="filter-event-dataset">
+              <option value="">All Datasets</option>
+              <option value="auth">auth</option>
+              <option value="apache">apache</option>
+              <option value="syslog">syslog</option>
+              <option value="audit">audit</option>
+              <option value="kernel">kernel</option>
+              <option value="package">package</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="filter-event-parse">Parse Status</label>
+            <select id="filter-event-parse">
+              <option value="">All</option>
+              <option value="ok">ok</option>
+              <option value="unparsed">unparsed</option>
+              <option value="error">error</option>
+            </select>
+          </div>
+          <div class="filter-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Query Logs</button>
+            <button id="events-filter-reset" type="button" class="btn btn-secondary btn-sm">Reset</button>
+          </div>
+        </form>
+
+        <div class="panel table-panel">
+          <div class="panel-header">
+            <h2>Normalized ECS Telemetry (<span id="events-count-label">0</span>)</h2>
+            <span class="panel-hint">Bấm vào một dòng để xem toàn bộ JSON ECS &amp; raw log</span>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table data-table-clickable">
+              <thead>
+                <tr>
+                  <th>@timestamp</th>
+                  <th>Host</th>
+                  <th>Source IP</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Outcome</th>
+                  <th>Dataset</th>
+                  <th>Parse</th>
+                  <th>Raw Log / Message</th>
+                </tr>
+              </thead>
+              <tbody id="events-table-body">
+                <tr><td colspan="9" class="empty-cell">Chưa tải dữ liệu ECS Events.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ==================== MODAL: OPERATOR TOKEN ==================== -->
+  <div id="token-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="token-modal-title">
+    <div class="modal-backdrop" data-close-modal="token-modal"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="token-modal-title">Cấu hình Operator Bearer Token</h3>
+        <button class="icon-btn" type="button" data-close-modal="token-modal" aria-label="Đóng">✕</button>
+      </div>
+      <form id="token-form" class="modal-body">
+        <p class="modal-desc">
+          Dán giá trị <code>ASP_OP_TOKEN</code> (tạo bởi <code>asp_admin.py create-operator</code>).
+          Token được lưu trong <code>localStorage</code> trên trình duyệt này.
+        </p>
+        <label class="field-label" for="token-input">Bearer Token</label>
+        <input
+          id="token-input"
+          type="password"
+          class="field-input"
+          placeholder="Nhập ASP_OP_TOKEN..."
+          autocomplete="off"
+          required
+        />
+        <div class="modal-footer">
+          <button id="token-clear-btn" type="button" class="btn btn-danger-outline btn-sm">Xóa Token</button>
+          <div class="modal-footer-right">
+            <button type="button" class="btn btn-secondary btn-sm" data-close-modal="token-modal">Hủy</button>
+            <button type="submit" class="btn btn-primary btn-sm">Lưu &amp; Kết nối</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: RAW ECS EVENT INSPECTOR ==================== -->
+  <div id="event-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="event-modal-title">
+    <div class="modal-backdrop" data-close-modal="event-modal"></div>
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <h3 id="event-modal-title">Chi tiết ECS Event</h3>
+        <button class="icon-btn" type="button" data-close-modal="event-modal" aria-label="Đóng">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-label">Raw Log (<code>event.original</code>)</div>
+        <pre id="event-modal-raw" class="code-block"></pre>
+        <div class="field-label">Normalized ECS JSON</div>
+        <pre id="event-modal-json" class="code-block code-block-tall"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
+

@@ -5,6 +5,7 @@ Protected by scoped operator Bearer tokens.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,7 +17,7 @@ from server.src.api.dependencies import (
     require_operator_scope,
     validate_optional_ip,
 )
-from server.src.common.schemas import AlertLevel, Case, CaseStatus
+from server.src.common.schemas import AlertLevel, Case, CaseStatus, CaseStatusUpdate
 from server.src.repositories.base import IAlertRepository, OperatorRecord
 
 router = APIRouter(prefix="/api/v1/cases", tags=["Cases"])
@@ -81,6 +82,42 @@ def trigger_case_investigation(
         case_id=case_id,
         report_data=report_update.model_dump(),
     )
+
+    updated_case = repo.get_case(case_id)
+    assert updated_case is not None
+    return updated_case
+
+
+@router.patch("/{case_id}", response_model=Case)
+def update_case_status(
+    case_id: int,
+    payload: CaseStatusUpdate,
+    _operator: OperatorRecord = Depends(require_operator_scope("investigate")),
+    repo: IAlertRepository = Depends(get_alert_repository),
+) -> Case:
+    """Updates case lifecycle status (`open` or `closed`)."""
+    case = repo.get_case(case_id)
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Case with ID {case_id} not found",
+        )
+
+    if payload.status == CaseStatus.OPEN and case.status != CaseStatus.OPEN:
+        existing_open = repo.find_open_case_by_key(case.case_key)
+        if existing_open is not None and existing_open.id != case.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"An open case already exists for key '{case.case_key}' "
+                    f"(Case #{existing_open.id})"
+                ),
+            )
+
+    if case.status != payload.status:
+        case.status = payload.status
+        case.updated_at = datetime.now(timezone.utc)
+        repo.save_case(case)
 
     updated_case = repo.get_case(case_id)
     assert updated_case is not None

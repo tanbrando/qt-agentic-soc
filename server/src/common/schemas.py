@@ -453,3 +453,8 @@ class Case(BaseModel):
     @classmethod
     def _normalize_case_dates(cls, v: Optional[datetime]) -> Optional[datetime]:
         return _ensure_utc(v)
+
+
+class CaseStatusUpdate(BaseModel):
+    """Payload to update case lifecycle status."""
+    status: CaseStatus

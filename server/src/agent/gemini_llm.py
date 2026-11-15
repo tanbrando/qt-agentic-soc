@@ -164,7 +164,13 @@ class GeminiSOCAnalystLLM:
         self._client: Optional[Any] = None
         if GENAI_AVAILABLE and self.api_key:
             try:
-                self._client = genai.Client(api_key=self.api_key)
+                # google-genai >=3.x defaults to v1, which disables Function Calling; force v1beta.
+                http_opts = (
+                    genai_types.HttpOptions(api_version="v1beta")
+                    if genai_types is not None and hasattr(genai_types, "HttpOptions")
+                    else {"api_version": "v1beta"}
+                )
+                self._client = genai.Client(api_key=self.api_key, http_options=http_opts)
             except Exception as exc:
                 logger.warning("Failed to initialize google.genai Client: %s", exc)
                 self._client = None

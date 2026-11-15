@@ -15,7 +15,8 @@ if str(root_dir) not in sys.path:
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from server.src.api.v1.alerts import router as alerts_router
 from server.src.api.v1.cases import router as cases_router
@@ -66,6 +67,16 @@ app.include_router(ingest_router)
 app.include_router(alerts_router)
 app.include_router(events_router)
 app.include_router(cases_router)
+
+WEB_DIR = Path(__file__).resolve().parent / "web"
+if WEB_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="web-static")
+
+
+@app.get("/", include_in_schema=False)
+def serve_dashboard():
+    """Serves the SOC Web Dashboard SPA."""
+    return FileResponse(WEB_DIR / "index.html")
 
 
 @app.get("/api/v1/health", tags=["Health"])
