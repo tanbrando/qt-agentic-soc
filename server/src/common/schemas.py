@@ -413,6 +413,7 @@ class AgentReportUpdate(BaseModel):
     agent_confidence: float = Field(..., ge=0.0, le=1.0)
     agent_report_markdown: str = Field(..., min_length=1)
     extracted_artifacts: List[Artifact] = Field(default_factory=list)
+    ai_report: Optional[Dict[str, Any]] = None
 
 
 class Case(BaseModel):

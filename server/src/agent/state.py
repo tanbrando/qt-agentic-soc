@@ -95,6 +95,8 @@ class InvestigationState(TypedDict, total=False):
     summary_markdown: str
     recommended_actions: List[str]
     iteration_count: int
+    trace_steps: List[Dict[str, Any]]
+    forensic_breakdown: Dict[str, Any]
 
 
 # ============================================================================

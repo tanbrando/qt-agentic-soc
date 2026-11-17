@@ -46,6 +46,13 @@ def test_web_dashboard_routes_and_static_assets():
     assert "Agentic SOC Platform" in html
     assert "/static/app.js" in html
     assert "/static/styles.css" in html
+    assert 'data-tab="overview"' in html
+    assert 'data-tab="cases"' in html
+    assert 'data-tab="ai-flow"' in html
+    assert 'data-tab="telemetry"' in html
+    assert "langgraph-diagram" in html
+    assert "chart-severity-donut" in html
+    assert "chart-alerts-timeline" in html
 
     static_mounts = [r for r in app.routes if isinstance(r, Mount) and r.path == "/static"]
     assert len(static_mounts) == 1
@@ -149,3 +156,58 @@ def test_patch_case_status_auth_lifecycle_and_conflict():
             repo=container.alert_repo,
         )
     assert exc_409.value.status_code == 409
+
+
+def test_investigation_populates_trace_steps_and_forensic_breakdown():
+    from server.src.agent.workflow import create_investigator
+    from server.src.api.v1.cases import trigger_case_investigation
+    from server.src.common.schemas import Alert
+
+    container = reset_container(force_memory=True)
+    tok = generate_token()
+    op = container.auth_repo.create_operator("op-trace", hash_secret(tok), ["read", "investigate"])
+
+    now = datetime(2026, 11, 13, 5, 0, 0, tzinfo=timezone.utc)
+    alert = Alert(
+        alert_key="trace-test-alert-1",
+        rule_id="asp-ssh-bruteforce",
+        title="SSH Brute Force",
+        level=AlertLevel.HIGH,
+        created_at=now,
+        window_start=now,
+        window_end=now,
+        group_key={"source.ip": "203.0.113.77", "host.name": "web-01"},
+        event_count=6,
+        event_uids=[],
+    )
+    case = container.alert_repo.correlate_alert_to_case(
+        alert=alert,
+        case_key="ip:203.0.113.77",
+        source_ip="203.0.113.77",
+    )
+    assert case is not None and case.id is not None
+
+    investigator = create_investigator(
+        log_repository=container.log_repo,
+        alert_repository=container.alert_repo,
+        use_mock_threat_intel=True,
+        use_mock_llm=True,
+    )
+    updated_case = trigger_case_investigation(
+        case_id=case.id,
+        _operator=op,
+        repo=container.alert_repo,
+        investigator=investigator,
+    )
+
+    assert updated_case.ai_investigated_at is not None
+    assert isinstance(updated_case.ai_report, dict)
+    steps = updated_case.ai_report.get("trace_steps")
+    assert isinstance(steps, list) and len(steps) >= 3
+    nodes_seen = {s["node"] for s in steps}
+    assert {"load_case_context", "agent_reasoning", "synthesize_verdict"}.issubset(nodes_seen)
+
+    breakdown = updated_case.ai_report.get("forensic_breakdown")
+    assert isinstance(breakdown, dict)
+    assert breakdown.get("verdict") == updated_case.agent_verdict
+    assert "asp-ssh-bruteforce" in breakdown.get("matched_rules", [])
