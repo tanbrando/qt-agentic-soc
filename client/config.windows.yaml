@@ -1,0 +1,28 @@
+# ASP Log Collector Configuration for Windows Client
+agent_id: win-01
+server_url: http://127.0.0.1:8000
+ingest_path: /api/v1/ingest/logs
+api_key_env: ASP_AGENT_API_KEY
+verify_tls: false
+ca_file: null
+timezone: auto
+start_position: end
+state_file: logs/state.json
+spool_dir: logs/spool
+spool_max_mb: 500
+poll_interval_seconds: 0.5
+batch_max_events: 100
+batch_max_bytes: 900000
+batch_max_seconds: 2
+max_line_bytes: 16384
+http_timeout_seconds: 10
+client_parse: false
+sources:
+  - path: logs/auth.log
+    log_type: auth
+  - path: logs/syslog.log
+    log_type: syslog
+  - path: logs/audit.log
+    log_type: audit
+  - path: logs/access.log
+    log_type: apache

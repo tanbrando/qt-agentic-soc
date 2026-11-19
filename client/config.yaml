@@ -21,5 +21,7 @@ sources:
     log_type: auth
   - path: /var/log/syslog
     log_type: syslog
+  - path: /var/log/audit/audit.log
+    log_type: audit
   # - path: /var/log/apache2/access.log
   #   log_type: apache

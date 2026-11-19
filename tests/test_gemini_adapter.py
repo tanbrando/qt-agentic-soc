@@ -5,9 +5,10 @@ and graceful fallback behavior.
 
 from __future__ import annotations
 
+import pytest
 from unittest.mock import MagicMock, patch
 
-from server.src.agent.gemini_llm import GeminiSOCAnalystLLM
+from server.src.agent.gemini_llm import GENAI_AVAILABLE, GeminiSOCAnalystLLM
 from server.src.agent.state import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from server.src.agent.tools import CheckIPReputationArgs
 
@@ -36,6 +37,7 @@ def test_gemini_llm_fallback_on_missing_key():
         assert resp.tool_calls[0]["args"]["ip"] == "203.0.113.195"
 
 
+@pytest.mark.skipif(not GENAI_AVAILABLE, reason="google-genai not installed")
 def test_gemini_llm_tool_binding():
     class DummyTool:
         name = "check_ip_reputation"
@@ -50,6 +52,7 @@ def test_gemini_llm_tool_binding():
     assert "ip" in declarations[0].parameters.properties
 
 
+@pytest.mark.skipif(not GENAI_AVAILABLE, reason="google-genai not installed")
 def test_gemini_llm_thought_signature_and_fallback_formatting():
     llm = GeminiSOCAnalystLLM(api_key="test-key-123")
     sentinel_content = MagicMock(name="genai_content_with_thought_sig")

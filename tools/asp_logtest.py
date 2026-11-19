@@ -169,7 +169,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("line", nargs="?", default=None, help="Single raw log line to parse and match")
     parser.add_argument("--file", dest="file_path", default=None, help="Path to log file for batch rule replay")
-    parser.add_argument("--type", dest="log_type", required=True, choices=["auth", "apache", "syslog"], help="Log source type")
+    parser.add_argument("--type", dest="log_type", required=True, choices=["auth", "apache", "syslog", "audit"], help="Log source type")
     parser.add_argument("--rules-dir", default="rules/", help="Directory containing YAML rule files")
     parser.add_argument("--timezone", default="Asia/Ho_Chi_Minh", help="Simulated agent IANA timezone")
     parser.add_argument("--collected-at", default=None, help="Simulated ISO-8601 collected_at timestamp")

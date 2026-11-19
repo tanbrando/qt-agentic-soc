@@ -34,6 +34,109 @@ def _env_or_required(cli_val: Optional[str], env_name: str, label: str) -> str:
     return val
 
 
+def _load_env_fallback() -> None:
+    for env_path in [_ROOT / ".env", Path(".env")]:
+        if env_path.exists():
+            try:
+                with env_path.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip('"').strip("'")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+                break
+            except Exception:
+                pass
+
+
+def build_scenario_log_lines(
+    scenario: str,
+    attacker_ip: str,
+    hostname: str,
+    base_utc: Optional[datetime] = None,
+) -> Tuple[List[str], List[str], List[str]]:
+    """Builds auth, apache, and audit log lines based on requested scenario."""
+    t0 = (base_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
+
+    def _iso_syslog(offset_s: int) -> str:
+        return (t0.replace(microsecond=0)).isoformat() if offset_s == 0 else datetime.fromtimestamp(
+            int(t0.timestamp()) + offset_s, tz=timezone.utc
+        ).isoformat()
+
+    def _clf_ts(offset_s: int) -> str:
+        dt = datetime.fromtimestamp(int(t0.timestamp()) + offset_s, tz=timezone.utc)
+        return dt.strftime("%d/%b/%Y:%H:%M:%S +0000")
+
+    auth_lines: List[str] = []
+    apache_lines: List[str] = []
+    audit_lines: List[str] = []
+
+    if scenario in ("all", "ssh-bruteforce"):
+        for i in range(6):
+            auth_lines.append(
+                f"{_iso_syslog(i * 2)} {hostname} sshd[{3100 + i}]: "
+                f"Failed password for root from {attacker_ip} port {52100 + i} ssh2"
+            )
+
+    if scenario in ("all", "password-spraying"):
+        spray_users = ["admin", "devops", "tester", "backup", "guest", "postgres", "mysql", "nginx", "apache", "oracle", "git", "jenkins"]
+        for idx, u in enumerate(spray_users):
+            auth_lines.append(
+                f"{_iso_syslog(15 + idx)} {hostname} sshd[{3200 + idx}]: "
+                f"Failed password for invalid user {u} from {attacker_ip} port 52001 ssh2"
+            )
+
+    if scenario in ("all", "bruteforce-then-success"):
+        for i in range(5):
+            auth_lines.append(
+                f"{_iso_syslog(30 + i * 2)} {hostname} sshd[{3300 + i}]: "
+                f"Failed password for deploy from {attacker_ip} port {52200 + i} ssh2"
+            )
+        auth_lines.append(
+            f"{_iso_syslog(42)} {hostname} sshd[3399]: "
+            f"Accepted password for deploy from {attacker_ip} port 52299 ssh2"
+        )
+
+    if scenario in ("all", "sudo-abuse"):
+        auth_lines.append(
+            f"{_iso_syslog(45)} {hostname} sudo: alice : user NOT in sudoers ; "
+            "TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/id"
+        )
+        auth_lines.append(
+            f"{_iso_syslog(48)} {hostname} sudo: alice : 3 incorrect password attempts ; "
+            "TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/cat /etc/shadow"
+        )
+
+    if scenario in ("all", "sudo-root"):
+        auth_lines.append(
+            f"{_iso_syslog(52)} {hostname} sudo: deploy : TTY=pts/1 ; "
+            "PWD=/home/deploy ; USER=root ; COMMAND=/bin/bash"
+        )
+
+    if scenario in ("all", "web-scan"):
+        scan_paths = [
+            "/.env", "/wp-login.php", "/admin", "/phpmyadmin", "/.git/config",
+            "/backup.zip", "/config.php", "/api/v1/debug", "/server-status", "/xmlrpc.php",
+        ]
+        apache_lines = [
+            f'{attacker_ip} - - [{_clf_ts(55 + i)}] "GET {scan_paths[i % len(scan_paths)]}?p={i} HTTP/1.1" '
+            '404 196 "-" "asp-demo-scanner/1.0"'
+            for i in range(32)
+        ]
+
+    if scenario in ("all", "audit"):
+        ts_sec = int(t0.timestamp())
+        audit_lines = [
+            f"type=USER_CMD msg=audit({ts_sec}.100:101): pid=1234 uid=1000 auid=1000 ses=1 subj=? msg='cwd=\"/home/ubuntu\" cmd=636174202f6574632f736861646f77 terminal=pts/0 res=success'",
+            f"type=SYSCALL msg=audit({ts_sec}.200:102): arch=c000003e syscall=59 success=yes exit=0 a0=7ffd588e1a60 a1=7ffd588e27c8 a2=7ffd588e27d8 a3=7ffd588e1780 items=2 ppid=100 pid=1235 auid=1000 uid=0 gid=0 euid=0 comm=\"nmap\" exe=\"/usr/bin/nmap\" key=\"recon_tool\"",
+            f"type=EXECVE msg=audit({ts_sec}.300:103): argc=3 a0=\"cat\" a1=\"/etc/shadow\" a2=\"/tmp/out\"",
+        ]
+
+    return auth_lines, apache_lines, audit_lines
+
+
 def build_demo_log_lines(
     attacker_ip: str,
     hostname: str,
@@ -144,8 +247,9 @@ def send_direct_ingest(
     api_key: str,
     auth_lines: Sequence[str],
     apache_lines: Sequence[str],
+    audit_lines: Optional[Sequence[str]] = None,
     timeout_sec: float = 10.0,
-) -> Dict[str, int]:
+) -> Dict[str, Any]:
     """Sends demo events directly to POST /api/v1/ingest/logs via v1.1 protocol."""
     now = datetime.now(timezone.utc)
     events = []
@@ -186,6 +290,26 @@ def send_direct_ingest(
         )
         ap_offset += len(line.encode("utf-8")) + 1
 
+    if audit_lines:
+        aud_offset = 0
+        stream_aud = f"demo-aud-{uuid.uuid4().hex[:8]}"
+        for idx, line in enumerate(audit_lines):
+            events.append(
+                {
+                    "log_type": "audit",
+                    "file": {
+                        "path": "/var/log/audit/audit.log",
+                        "device": 1,
+                        "inode": 9003,
+                        "stream_id": stream_aud,
+                        "offset": aud_offset,
+                    },
+                    "collected_at": now.isoformat(),
+                    "message": line,
+                }
+            )
+            aud_offset += len(line.encode("utf-8")) + 1
+
     payload = {
         "schema_version": "1.1",
         "batch_id": f"demo-{uuid.uuid4().hex}",
@@ -210,6 +334,8 @@ def send_direct_ingest(
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    _load_env_fallback()
+
     parser = argparse.ArgumentParser(
         description="Simulate multi-stage SOC attacks for ASP demo (zero hardcoded IP/key)."
     )
@@ -218,6 +344,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         choices=["logfiles", "ingest", "http-scan"],
         required=True,
         help="logfiles: append auth/apache logs for collector.py; ingest: POST batch to server; http-scan: send real HTTP 404 scan requests.",
+    )
+    parser.add_argument(
+        "--scenario",
+        choices=[
+            "all",
+            "ssh-bruteforce",
+            "password-spraying",
+            "bruteforce-then-success",
+            "sudo-abuse",
+            "sudo-root",
+            "web-scan",
+            "audit",
+        ],
+        default="all",
+        help="Specific attack scenario to simulate (default: all).",
     )
     parser.add_argument(
         "--attacker-ip",
@@ -250,6 +391,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Registered agent ID for --mode ingest (or env ASP_AGENT_ID).",
     )
     parser.add_argument(
+        "--api-key",
+        default=os.environ.get("ASP_AGENT_API_KEY"),
+        help="Agent Bearer API key (or env ASP_AGENT_API_KEY).",
+    )
+    parser.add_argument(
         "--api-key-env",
         default="ASP_AGENT_API_KEY",
         help="Environment variable name storing the agent Bearer API key (default ASP_AGENT_API_KEY).",
@@ -274,7 +420,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     attacker_ip = _env_or_required(args.attacker_ip, "ASP_DEMO_ATTACKER_IP", "--attacker-ip")
-    auth_lines, apache_lines = build_demo_log_lines(attacker_ip=attacker_ip, hostname=args.hostname)
+    if args.scenario == "all" and args.mode == "logfiles":
+        auth_lines, apache_lines = build_demo_log_lines(attacker_ip=attacker_ip, hostname=args.hostname)
+        audit_lines: List[str] = []
+    else:
+        auth_lines, apache_lines, audit_lines = build_scenario_log_lines(
+            scenario=args.scenario,
+            attacker_ip=attacker_ip,
+            hostname=args.hostname,
+        )
 
     if args.mode == "logfiles":
         auth_path = Path(_env_or_required(args.auth_log, "ASP_DEMO_AUTH_LOG", "--auth-log"))
@@ -284,7 +438,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     server_url = _env_or_required(args.server_url, "ASP_SERVER_URL", "--server-url")
-    api_key = _env_or_required(None, args.api_key_env, f"agent API key in env {args.api_key_env}")
+    api_key = args.api_key or os.environ.get(args.api_key_env)
+    if not api_key:
+        raise SystemExit(f"Missing agent API key: provide --api-key CLI flag or set environment variable {args.api_key_env}.")
+
     resp = send_direct_ingest(
         server_url=server_url,
         agent_id=args.agent_id,
@@ -292,6 +449,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         api_key=api_key,
         auth_lines=auth_lines,
         apache_lines=apache_lines,
+        audit_lines=audit_lines,
     )
     print(f"Ingest complete -> {resp}")
     return 0

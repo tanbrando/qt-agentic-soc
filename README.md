@@ -30,7 +30,7 @@ qt-agentic-soc/
 │   ├── main.py                  # FastAPI entrypoint (chạy --workers 1)
 │   └── src/
 │       ├── common/              # schemas.py (ECS v1.1 + Alert/Case), config.py, security.py
-│       ├── parsers/             # auth_parser, apache_parser, syslog_parser (hàm thuần)
+│       ├── parsers/             # auth_parser, audit_parser, syslog_parser, apache_parser
 │       ├── engine/              # loader.py, generic_rules.py, state_store.py, recovery.py
 │       ├── repositories/        # memory.py & postgres.py (psycopg v3 đồng bộ)
 │       ├── services/            # ingestion_service.py (raw-first, lock, case lifecycle)
@@ -120,7 +120,29 @@ bash setup/client_setup.sh --setup-only
 3. Sinh cấu hình chạy `$HOME/asp-agent-config.yaml` (quyền `0600`) trỏ `state_file` và `spool_dir` về `$HOME/.asp-agent/` (ext4 Linux) và lấy `server_url`, `agent_id`, `verify_tls` từ `.env`.
 4. Chạy `client/collector.py --config "$HOME/asp-agent-config.yaml"`.
 
-*(Lưu ý trên Ubuntu: user chạy `client_setup.sh` cần thuộc nhóm `adm` để đọc `/var/log/auth.log` và `/var/log/syslog`.)*
+*(Lưu ý trên Ubuntu: user chạy `client_setup.sh` cần thuộc nhóm `adm` để đọc `/var/log/auth.log`, `/var/log/syslog` và `/var/log/audit/audit.log`.)*
+
+### Bước 4.1: Kiểm Thử Thu Thập & Phân Tích Log (Từ A-Z)
+
+Dự án cung cấp bộ công cụ kiểm thử toàn diện cả kịch bản tấn công SIEM Rules và kiểm thử Linux Audit Log:
+
+1. **Bảng Tra Cứu Lệnh Test Tay Thật 100% (Chạy thẳng trên Terminal không cần script):**
+   - Xem chi tiết tại [docs/demo.md](file:///d:/ATTT/CK/qt-agentic-soc/docs/demo.md) hoặc gõ `bash scripts/test_ubuntu_attacks.sh` rồi chọn `9` để lấy bảng lệnh copy & paste.
+
+2. **Kiểm thử Chuyên Sâu Linux Audit Log (`/var/log/audit/audit.log`):**
+   ```bash
+   bash scripts/test_audit_flow.sh
+   ```
+   - **Tùy chọn 1:** Xem Bảng tra cứu lệnh test tay thật.
+   - **Tùy chọn 2:** Tự động phát sinh 1 bản ghi audit thật ngay (`whoami`) và kiểm tra API.
+   - **Tùy chọn 3:** Chạy giả lập full 5 kịch bản Audit (`EXECVE`, `USER_CMD` hex, `USER_LOGIN`, `CONFIG_CHANGE`, `SYSCALL`).
+   - **Tùy chọn 4:** Xác minh truy vấn API `/api/v1/events?dataset=linux.audit`.
+
+3. **Kiểm thử Tự Động 6/6 SIEM Detection Rules (SSH, Sudo Abuse, Web Scan 404...):**
+   ```bash
+   bash scripts/test_ubuntu_attacks.sh
+   ```
+   Menu trực quan cho phép chọn kiểm thử từng rule hoặc toàn bộ 6/6 rules cùng lúc.
 
 ---
 

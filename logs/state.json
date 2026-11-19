@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "sources": {
+    "D:/ATTT/CK/qt-agentic-soc/logs/auth.log": {
+      "device": 133119213695180000,
+      "inode": 3377699720670457,
+      "stream_id": "a3380a13",
+      "offset": 3409,
+      "head_len": 64,
+      "head_hash": "dd54f342bc245124f1dbe30cff8e13d8984a0ede",
+      "pending_rotated": []
+    },
+    "D:/ATTT/CK/qt-agentic-soc/logs/syslog.log": {
+      "device": 133119213695180000,
+      "inode": 14073748835675387,
+      "stream_id": "96a181f4",
+      "offset": 114,
+      "head_len": 64,
+      "head_hash": "7702da11ebae24680adb2a23fc38340eea0b7afa",
+      "pending_rotated": []
+    },
+    "D:/ATTT/CK/qt-agentic-soc/logs/audit.log": {
+      "device": 133119213695180000,
+      "inode": 9288674231594236,
+      "stream_id": "a1c4e9d7",
+      "offset": 429,
+      "head_len": 64,
+      "head_hash": "381d504c43bccef4bfc79a1a01b7d5a8dbf8901b",
+      "pending_rotated": []
+    },
+    "D:/ATTT/CK/qt-agentic-soc/logs/access.log": {
+      "device": 133119213695180000,
+      "inode": 4785074604223742,
+      "stream_id": "7875ba3f",
+      "offset": 3358,
+      "head_len": 64,
+      "head_hash": "c52ffb786375b2b276a940cec08d2b98e5dc8e29",
+      "pending_rotated": []
+    }
+  }
+}

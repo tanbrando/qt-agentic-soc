@@ -571,7 +571,20 @@ class LogCollector:
         self.server_url: str = str(cfg.get("server_url", "http://127.0.0.1:8000"))
         self.ingest_path: str = str(cfg.get("ingest_path", "/api/v1/ingest/logs"))
         self.api_key_env: str = str(cfg.get("api_key_env", "ASP_AGENT_API_KEY"))
-        raw_env_key = os.environ.get(self.api_key_env)
+        raw_env_key = os.environ.get(self.api_key_env) or cfg.get("api_key")
+        if not raw_env_key:
+            for env_candidate in [root_dir / ".env", Path(".env")]:
+                if env_candidate.exists():
+                    try:
+                        for line in env_candidate.read_text(encoding="utf-8").splitlines():
+                            line = line.strip()
+                            if line.startswith(f"{self.api_key_env}=") or line.startswith("ASP_AGENT_API_KEY="):
+                                raw_env_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                                break
+                    except Exception:
+                        pass
+                if raw_env_key:
+                    break
         self.api_key: Optional[str] = raw_env_key.strip() if raw_env_key else None
         self.verify_tls: bool = bool(cfg.get("verify_tls", True))
         self.ca_file: Optional[str] = cfg.get("ca_file")
