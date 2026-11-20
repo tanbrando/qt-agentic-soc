@@ -10,6 +10,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 echo -e "${CYAN}================================================================${NC}"
@@ -25,9 +26,11 @@ echo -e "  ${YELLOW}4${NC}) Test Brute Force rồi Success (Rule: asp-bruteforce
 echo -e "  ${YELLOW}5${NC}) Test Sudo Abuse (Rule: asp-sudo-abuse)"
 echo -e "  ${YELLOW}6${NC}) Test Sudo to Root Shell (Rule: asp-sudo-to-root-shell)"
 echo -e "  ${YELLOW}7${NC}) Test Web Scan 404 (Rule: asp-web-scan-404)"
+echo -e "  ${YELLOW}8${NC}) Test Linux Audit Log (/var/log/audit/audit.log - Menu & Xác minh)"
+echo -e "  ${YELLOW}9${NC}) ${BOLD}Xem Bảng Tra Cứu Lệnh Test Tay Thật 100%${NC} (Copy & paste chạy thẳng trên terminal)"
 echo -e "  ${YELLOW}0${NC}) Thoát"
 echo ""
-read -p "Nhập lựa chọn của bạn [1-7]: " choice
+read -p "Nhập lựa chọn của bạn [0-9]: " choice
 
 ATTACKER_IP="203.0.113.77"
 CURRENT_USER="$(whoami)"
@@ -187,6 +190,14 @@ case "$choice" in
   5) test_sudo_abuse ;;
   6) test_sudo_root_shell ;;
   7) test_web_scan_404 ;;
+  8)
+    bash "$SCRIPT_DIR/test_audit_flow.sh"
+    exit 0
+    ;;
+  9)
+    printf "1\n" | bash "$SCRIPT_DIR/test_audit_flow.sh"
+    exit 0
+    ;;
   0) echo "Thoát."; exit 0 ;;
   *) echo "Lựa chọn không hợp lệ."; exit 1 ;;
 esac
