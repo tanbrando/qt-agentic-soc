@@ -15,13 +15,45 @@ from server.src.common.schemas import (
     Alert,
     AlertLevel,
     AlertStatus,
+    AspMetaInfo,
     Case,
     CaseStatus,
     ECSEvent,
+    EcsAgentInfo,
+    EcsEventMeta,
+    EcsHostInfo,
     IngestBatchRequest,
     ParseStatus,
     RawLogEvent,
 )
+
+
+def build_parse_error_event(
+    event_uid: str,
+    raw_msg: str,
+    collected_at: datetime,
+    ingested_at: datetime,
+    batch: IngestBatchRequest,
+    log_type_val: str,
+) -> ECSEvent:
+    """Builds a standardized ECS fallback event when a parser raises an unexpected exception."""
+    dataset = "apache.access" if log_type_val == "apache" else f"linux.{log_type_val}"
+    return ECSEvent(
+        timestamp=collected_at,
+        event=EcsEventMeta(
+            id=event_uid,
+            category=["host"],
+            type=["info"],
+            action="parse_error",
+            dataset=dataset,
+            original=raw_msg,
+            created=collected_at,
+            ingested=ingested_at,
+        ),
+        host=EcsHostInfo(name=batch.agent.hostname, ip=list(batch.agent.ip)),
+        agent=EcsAgentInfo(id=batch.agent.id, version=batch.agent.version),
+        asp=AspMetaInfo(parse_status=ParseStatus.ERROR),
+    )
 
 
 @dataclass
@@ -189,6 +221,15 @@ class IAlertRepository(ABC):
     @abstractmethod
     def update_case_with_agent_report(self, case_id: int, report_data: Dict[str, Any]) -> None:
         """Updates case triage verdict, confidence, and investigation report."""
+        pass
+
+    @abstractmethod
+    def close_idle_cases(
+        self,
+        idle_timeout_seconds: int,
+        now: Optional[datetime] = None,
+    ) -> int:
+        """Closes open cases whose last_activity_at is older than (now - idle_timeout_seconds). Returns count."""
         pass
 
     def correlate_alert_to_case(

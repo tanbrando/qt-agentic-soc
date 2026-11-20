@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Literal, Optional
 
 import yaml
@@ -17,6 +18,26 @@ from server.src.common.config import parse_duration_seconds
 from server.src.common.schemas import AlertLevel
 
 logger = logging.getLogger(__name__)
+
+_SUPPORTED_SELECTION_OPS = frozenset(
+    {"eq", "contains", "startswith", "endswith", "re", "exists", "gte", "gt", "lte", "lt"}
+)
+
+
+def _validate_selection_mapping(selection: Dict[str, Any]) -> None:
+    """Validates selection operators and pre-compiles `|re` patterns so bad YAML rules are skipped safely."""
+    for raw_key, expected in selection.items():
+        if "|" in raw_key:
+            _field, op = raw_key.split("|", 1)
+        else:
+            op = "eq"
+        if op not in _SUPPORTED_SELECTION_OPS:
+            raise ValueError(f"Unsupported selection operator {op!r} in key {raw_key!r}")
+        if op == "re":
+            try:
+                re.compile(str(expected))
+            except re.error as exc:
+                raise ValueError(f"Invalid regex in selection {raw_key!r}: {exc}") from exc
 
 
 class SequenceStepSpec(BaseModel):
@@ -82,6 +103,11 @@ class RuleYamlSpec(BaseModel):
             parse_duration_seconds(self.cooldown)
         if self.detection.type in ("match", "event_count", "value_count") and not self.selection:
             raise ValueError(f"selection is required for rule type {self.detection.type!r}")
+        if self.selection:
+            _validate_selection_mapping(self.selection)
+        if self.detection.steps:
+            for step in self.detection.steps:
+                _validate_selection_mapping(step.selection)
         return self
 
     @property

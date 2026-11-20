@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -21,15 +22,17 @@ from server.src.agent.state import (
     BaseMessage,
     HumanMessage,
     InvestigationState,
+    StructuredSynthesisResult,
     SystemMessage,
     ToolMessage,
 )
 from server.src.agent.triage import (
+    TriageDecision,
     build_investigation_markdown_report,
     evaluate_forensic_evidence,
     is_ip_private_or_local,
 )
-from server.src.common.schemas import ArtifactType, Case
+from server.src.common.schemas import AgentVerdict, ArtifactType, Case
 from server.src.repositories.base import IAlertRepository
 
 logger = logging.getLogger("agentic_soc.agent.nodes")
@@ -397,6 +400,37 @@ def make_tool_execution_node(tools: Sequence[Any]) -> Callable:
     return tool_execution
 
 
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
+
+
+def _parse_structured_llm_output(content: str) -> Optional[StructuredSynthesisResult]:
+    """
+    Extracts and validates a StructuredSynthesisResult JSON block from the LLM's final message.
+    Returns None if no valid structured JSON payload is present.
+    """
+    if not content or "verdict" not in content:
+        return None
+
+    candidates: List[str] = []
+    for match in _JSON_FENCE_RE.finditer(content):
+        candidates.append(match.group(1))
+
+    if not candidates:
+        start = content.rfind("{")
+        end = content.rfind("}")
+        if start != -1 and end > start:
+            candidates.append(content[start : end + 1])
+
+    for raw_json in reversed(candidates):
+        try:
+            data = json.loads(raw_json)
+            if isinstance(data, dict) and "verdict" in data:
+                return StructuredSynthesisResult.model_validate(data)
+        except Exception:
+            continue
+    return None
+
+
 def make_synthesize_verdict_node() -> Callable:
     """Node 4: Synthesizes final verdict, confidence, AI narrative, and Markdown executive report."""
 
@@ -417,12 +451,60 @@ def make_synthesize_verdict_node() -> Callable:
                     llm_analysis = content
                 break
 
-        triage_decision = evaluate_forensic_evidence(
+        baseline_decision = evaluate_forensic_evidence(
             alerts=alerts,
             artifacts=artifacts,
             evidence_logs=evidence_logs,
             case_source_ip=case_data.get("source_ip"),
         )
+
+        max_rep_score = max(
+            (float(art.get("reputation_score") or 0.0) for art in artifacts),
+            default=0.0,
+        )
+        rule_ids = {str(a.get("rule_id") or "").lower() for a in alerts}
+        strong_malicious_evidence = (
+            "asp-bruteforce-then-success" in rule_ids
+            or "asp-sudo-to-root-shell" in rule_ids
+            or max_rep_score >= 80.0
+        )
+
+        structured = _parse_structured_llm_output(llm_analysis)
+        verdict_source = "forensic_rules"
+        guardrail_override = False
+
+        if structured is not None:
+            if (
+                strong_malicious_evidence
+                and baseline_decision.verdict == AgentVerdict.TRUE_POSITIVE
+                and structured.verdict == AgentVerdict.FALSE_POSITIVE
+            ):
+                logger.warning(
+                    "Guardrail override: LLM marked False Positive despite strong malicious evidence "
+                    "(rules=%s, max_rep_score=%.1f).",
+                    sorted(rule_ids),
+                    max_rep_score,
+                )
+                triage_decision = baseline_decision
+                verdict_source = "guardrail_override"
+                guardrail_override = True
+            else:
+                triage_decision = TriageDecision(
+                    verdict=structured.verdict,
+                    confidence=float(structured.confidence),
+                    executive_summary=(
+                        structured.executive_summary.strip() or baseline_decision.executive_summary
+                    ),
+                    root_cause=structured.root_cause.strip() or baseline_decision.root_cause,
+                    recommended_actions=(
+                        list(structured.recommended_actions)
+                        if structured.recommended_actions
+                        else baseline_decision.recommended_actions
+                    ),
+                )
+                verdict_source = "llm_structured"
+        else:
+            triage_decision = baseline_decision
 
         title = case_data.get("title", "Security Incident")
         case_id = case_data.get("case_id", "N/A")
@@ -442,14 +524,12 @@ def make_synthesize_verdict_node() -> Callable:
             llm_analysis=llm_analysis,
         )
 
-        max_rep_score = max(
-            (float(art.get("reputation_score") or 0.0) for art in artifacts),
-            default=0.0,
-        )
         source_ip = case_data.get("source_ip")
         forensic_breakdown = {
             "verdict": triage_decision.verdict.value,
             "confidence": round(triage_decision.confidence, 4),
+            "verdict_source": verdict_source,
+            "guardrail_override": guardrail_override,
             "root_cause": triage_decision.root_cause,
             "executive_summary": triage_decision.executive_summary,
             "max_reputation_score": max_rep_score,

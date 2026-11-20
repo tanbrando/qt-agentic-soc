@@ -4,14 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agentic SOC Platform — Command Center</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261120b" />
 </head>
 <body>
   <div class="app-layout">
     <!-- ==================== SIDEBAR ==================== -->
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="sidebar-brand">
-        <div class="brand-icon" aria-hidden="true">🛡️</div>
+        <div class="brand-icon" aria-hidden="true">
+          <span class="ui-icon ui-icon-lg" style="--icon-url: url('/static/icons/shield-halved.svg');"></span>
+        </div>
         <div class="brand-text">
           <h1 class="brand-title">Agentic SOC Platform</h1>
           <p class="brand-subtitle">SIEM &amp; AI Forensic Console</p>
@@ -20,21 +22,21 @@
 
       <nav class="sidebar-nav" role="tablist" aria-label="SOC Sections">
         <button class="nav-item active" data-tab="overview" role="tab" aria-selected="true">
-          <span class="nav-icon">📊</span>
+          <span class="nav-icon"><span class="ui-icon" style="--icon-url: url('/static/icons/chart-pie.svg');" aria-hidden="true"></span></span>
           <span class="nav-label">Tổng quan &amp; Biểu đồ</span>
         </button>
         <button class="nav-item" data-tab="cases" role="tab" aria-selected="false">
-          <span class="nav-icon">🛡️</span>
+          <span class="nav-icon"><span class="ui-icon" style="--icon-url: url('/static/icons/shield-halved.svg');" aria-hidden="true"></span></span>
           <span class="nav-label">Điều tra Case</span>
           <span id="nav-badge-cases" class="nav-badge">0</span>
         </button>
         <button class="nav-item" data-tab="ai-flow" role="tab" aria-selected="false">
-          <span class="nav-icon">🤖</span>
+          <span class="nav-icon"><span class="ui-icon" style="--icon-url: url('/static/icons/robot.svg');" aria-hidden="true"></span></span>
           <span class="nav-label">Giám sát Luồng AI</span>
           <span id="nav-badge-ai" class="nav-badge nav-badge-accent hidden">LIVE</span>
         </button>
         <button class="nav-item" data-tab="telemetry" role="tab" aria-selected="false">
-          <span class="nav-icon">🔎</span>
+          <span class="nav-icon"><span class="ui-icon" style="--icon-url: url('/static/icons/magnifying-glass.svg');" aria-hidden="true"></span></span>
           <span class="nav-label">Cảnh báo &amp; ECS Log</span>
         </button>
       </nav>
@@ -46,7 +48,8 @@
         </div>
         <div class="sidebar-sync" id="sidebar-last-sync">Sync: --</div>
         <a href="/docs" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm btn-block">
-          Swagger API Docs ↗
+          <span>Swagger API Docs</span>
+          <span class="ui-icon ui-icon-xs" style="--icon-url: url('/static/icons/arrow-up-right-from-square.svg');" aria-hidden="true"></span>
         </a>
       </div>
     </aside>
@@ -62,16 +65,19 @@
 
         <div class="topbar-actions">
           <label class="toggle-wrap" title="Tự động cập nhật dữ liệu mỗi 10 giây">
-            <input type="checkbox" id="auto-refresh-toggle" />
-            <span>Auto 10s</span>
+            <input type="checkbox" id="auto-refresh-toggle" class="toggle-input" />
+            <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+            <span class="toggle-label">Auto 10s</span>
           </label>
 
           <button id="refresh-btn" class="btn btn-secondary btn-sm" type="button">
-            ↻ Làm mới
+            <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/arrows-rotate.svg');" aria-hidden="true"></span>
+            <span>Làm mới</span>
           </button>
 
           <button id="token-btn" class="btn btn-primary btn-sm" type="button">
-            🔑 <span id="token-btn-label">Operator Token</span>
+            <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/key.svg');" aria-hidden="true"></span>
+            <span id="token-btn-label">Operator Token</span>
           </button>
         </div>
       </header>
@@ -79,7 +85,9 @@
       <!-- Global Toast / Error Banner -->
       <div id="alert-banner" class="alert-banner hidden" role="status">
         <span id="alert-banner-msg"></span>
-        <button id="alert-banner-close" class="icon-btn" type="button" aria-label="Đóng thông báo">✕</button>
+        <button id="alert-banner-close" class="icon-btn" type="button" aria-label="Đóng thông báo">
+          <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/xmark.svg');" aria-hidden="true"></span>
+        </button>
       </div>
 
       <!-- Missing Token Prompt Banner -->
@@ -105,7 +113,7 @@
             <article class="kpi-card">
               <div class="kpi-top">
                 <span class="kpi-label">Tổng số Case</span>
-                <span class="kpi-icon">📁</span>
+                <span class="kpi-icon kpi-icon-neutral"><span class="ui-icon" style="--icon-url: url('/static/icons/folder-open.svg');" aria-hidden="true"></span></span>
               </div>
               <div id="kpi-total-cases" class="kpi-value">0</div>
               <div id="kpi-open-cases" class="kpi-sub">0 open / 0 closed</div>
@@ -114,7 +122,7 @@
             <article class="kpi-card kpi-danger">
               <div class="kpi-top">
                 <span class="kpi-label">Nghiêm trọng (Crit / High)</span>
-                <span class="kpi-icon">🚨</span>
+                <span class="kpi-icon kpi-icon-danger"><span class="ui-icon" style="--icon-url: url('/static/icons/triangle-exclamation.svg');" aria-hidden="true"></span></span>
               </div>
               <div id="kpi-high-cases" class="kpi-value">0</div>
               <div id="kpi-critical-count" class="kpi-sub">0 critical, 0 high</div>
@@ -123,7 +131,7 @@
             <article class="kpi-card kpi-accent">
               <div class="kpi-top">
                 <span class="kpi-label">AI Đã điều tra</span>
-                <span class="kpi-icon">🤖</span>
+                <span class="kpi-icon kpi-icon-accent"><span class="ui-icon" style="--icon-url: url('/static/icons/robot.svg');" aria-hidden="true"></span></span>
               </div>
               <div id="kpi-ai-cases" class="kpi-value">0</div>
               <div id="kpi-tp-count" class="kpi-sub">0 True Positive</div>
@@ -132,7 +140,7 @@
             <article class="kpi-card kpi-success">
               <div class="kpi-top">
                 <span class="kpi-label">Cảnh báo tương quan</span>
-                <span class="kpi-icon">⚡</span>
+                <span class="kpi-icon kpi-icon-success"><span class="ui-icon" style="--icon-url: url('/static/icons/bolt.svg');" aria-hidden="true"></span></span>
               </div>
               <div id="kpi-total-alerts" class="kpi-value">0</div>
               <div id="kpi-total-events-sub" class="kpi-sub">0 ECS events gần nhất</div>
@@ -278,10 +286,12 @@
             </div>
             <div class="ai-toolbar-actions">
               <button id="ai-flow-replay-btn" type="button" class="btn btn-secondary btn-sm">
-                🎬 Phát lại luồng (Replay)
+                <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/rotate-left.svg');" aria-hidden="true"></span>
+                <span>Phát lại luồng (Replay)</span>
               </button>
               <button id="ai-flow-run-btn" type="button" class="btn btn-primary btn-sm">
-                ▶ Chạy &amp; Giám sát AI
+                <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/play.svg');" aria-hidden="true"></span>
+                <span>Chạy &amp; Giám sát AI</span>
               </button>
             </div>
           </div>
@@ -375,10 +385,12 @@
           <div class="subtab-bar">
             <div class="subtab-group">
               <button class="subtab-btn active" data-subtab="alerts" type="button">
-                ⚡ Detection Alerts (<span id="alerts-count-label">0</span>)
+                <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/bolt.svg');" aria-hidden="true"></span>
+                <span>Detection Alerts (<span id="alerts-count-label">0</span>)</span>
               </button>
               <button class="subtab-btn" data-subtab="events" type="button">
-                📜 Normalized ECS Events (<span id="events-count-label">0</span>)
+                <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/file-lines.svg');" aria-hidden="true"></span>
+                <span>Normalized ECS Events (<span id="events-count-label">0</span>)</span>
               </button>
             </div>
             <div id="telemetry-mini-summary" class="telemetry-mini-summary"></div>
@@ -533,7 +545,9 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="token-modal-title">Cấu hình Operator Bearer Token</h3>
-        <button class="icon-btn" type="button" data-close-modal="token-modal" aria-label="Đóng">✕</button>
+        <button class="icon-btn" type="button" data-close-modal="token-modal" aria-label="Đóng">
+          <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/xmark.svg');" aria-hidden="true"></span>
+        </button>
       </div>
       <form id="token-form" class="modal-body">
         <p class="modal-desc">
@@ -566,7 +580,9 @@
     <div class="modal-card modal-card-lg">
       <div class="modal-header">
         <h3 id="event-modal-title">Chi tiết ECS Event</h3>
-        <button class="icon-btn" type="button" data-close-modal="event-modal" aria-label="Đóng">✕</button>
+        <button class="icon-btn" type="button" data-close-modal="event-modal" aria-label="Đóng">
+          <span class="ui-icon ui-icon-sm" style="--icon-url: url('/static/icons/xmark.svg');" aria-hidden="true"></span>
+        </button>
       </div>
       <div class="modal-body">
         <div class="field-label">Raw Log (<code>event.original</code>)</div>
@@ -577,6 +593,6 @@
     </div>
   </div>
 
-  <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/app.js?v=20261120b"></script>
 </body>
 </html>

@@ -95,6 +95,20 @@ def test_loader_skips_invalid_yaml_without_crashing(tmp_path: Path):
         ),
         encoding="utf-8",
     )
+    (tmp_path / "broken_invalid_regex.yaml").write_text(
+        "\n".join(
+            [
+                "id: test-bad-regex",
+                "title: Bad Regex Rule",
+                "level: low",
+                "selection:",
+                "  process.args|re: '[unclosed'",
+                "detection:",
+                "  type: match",
+            ]
+        ),
+        encoding="utf-8",
+    )
     (tmp_path / "broken_missing_timespan.yaml").write_text(
         "\n".join(
             [

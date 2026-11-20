@@ -34,6 +34,22 @@ evaluate external Threat Intelligence, and synthesize an evidence-grounded verdi
 3. If an external or suspicious `source_ip` is involved, call `check_ip_reputation`.
 4. If a user account is involved (e.g. post-compromise SSH login or sudo escalation), call `get_user_activity_history`.
 5. Conclude with concise forensic findings explaining the root cause, evidence timeline, and containment steps.
+
+### FINAL STRUCTURED OUTPUT FORMAT:
+When you have finished calling tools and are ready to conclude, include a fenced JSON block at the end of your final response matching this exact schema:
+```json
+{
+  "verdict": "True Positive",
+  "confidence": 0.9,
+  "executive_summary": "Concise 1-2 sentence summary grounded in observed alerts, logs, and Threat Intel.",
+  "root_cause": "Primary technical root cause of the incident.",
+  "recommended_actions": [
+    "Actionable human-in-the-loop containment or verification step 1",
+    "Actionable human-in-the-loop containment or verification step 2"
+  ]
+}
+```
+Valid `verdict` values are strictly: `"True Positive"`, `"False Positive"`, or `"Inconclusive"`. `confidence` must be a float between `0.0` and `1.0`.
 """
 
 

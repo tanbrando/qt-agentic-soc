@@ -205,3 +205,51 @@ def test_concurrent_alert_correlation_never_violates_one_open_case_per_key(alert
     assert len(open_case.alerts) == 8
     assert {r.id for r in results if r is not None} == {open_case.id}
 
+
+def test_close_idle_cases_closes_only_expired_open_cases(alert_repo: IAlertRepository):
+    t_old = datetime(2026, 11, 10, 1, 0, 0, tzinfo=timezone.utc)
+    t_recent = datetime(2026, 11, 10, 9, 30, 0, tzinfo=timezone.utc)
+    t_now = datetime(2026, 11, 10, 10, 0, 0, tzinfo=timezone.utc)
+
+    old_case = alert_repo.correlate_alert_to_case(
+        alert=Alert(
+            alert_key="p54-case-reaper-old",
+            rule_id="asp-ssh-bruteforce",
+            title="Old brute force",
+            level=AlertLevel.HIGH,
+            window_start=t_old,
+            window_end=t_old,
+            group_key={"source.ip": "198.51.100.240"},
+            event_count=5,
+            event_uids=["r1"],
+        ),
+        case_key="ip:198.51.100.240",
+        source_ip="198.51.100.240",
+    )
+    recent_case = alert_repo.correlate_alert_to_case(
+        alert=Alert(
+            alert_key="p54-case-reaper-recent",
+            rule_id="asp-ssh-bruteforce",
+            title="Recent brute force",
+            level=AlertLevel.HIGH,
+            window_start=t_recent,
+            window_end=t_recent,
+            group_key={"source.ip": "198.51.100.241"},
+            event_count=5,
+            event_uids=["r2"],
+        ),
+        case_key="ip:198.51.100.241",
+        source_ip="198.51.100.241",
+    )
+    assert old_case is not None and old_case.id is not None
+    assert recent_case is not None and recent_case.id is not None
+
+    closed_count = alert_repo.close_idle_cases(idle_timeout_seconds=6 * 3600, now=t_now)
+    assert closed_count >= 1
+
+    old_after = alert_repo.get_case(old_case.id)
+    recent_after = alert_repo.get_case(recent_case.id)
+    assert old_after is not None and old_after.status == CaseStatus.CLOSED
+    assert recent_after is not None and recent_after.status == CaseStatus.OPEN
+
+

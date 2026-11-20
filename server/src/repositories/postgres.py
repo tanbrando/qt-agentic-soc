@@ -5,10 +5,12 @@ and IAuthRepository using psycopg (v3) and parameterized SQL.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import ipaddress
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -37,6 +39,7 @@ from server.src.repositories.base import (
     ILogRepository,
     OperatorRecord,
     ParserFn,
+    build_parse_error_event,
 )
 
 _SAFE_DOTTED_PATH_RE = re.compile(r"^[a-zA-Z0-9_@]+(\.[a-zA-Z0-9_@]+)*$")
@@ -58,33 +61,6 @@ _COLUMN_MAP: Dict[str, Tuple[str, str]] = {
     "outcome": ("outcome", "text"),
     "event.outcome": ("outcome", "text"),
 }
-
-
-def _build_parse_error_event(
-    event_uid: str,
-    raw_msg: str,
-    collected_at: datetime,
-    ingested_at: datetime,
-    batch: IngestBatchRequest,
-    log_type_val: str,
-) -> ECSEvent:
-    dataset = "apache.access" if log_type_val == "apache" else f"linux.{log_type_val}"
-    return ECSEvent(
-        timestamp=collected_at,
-        event=EcsEventMeta(
-            id=event_uid,
-            category=["host"],
-            type=["info"],
-            action="parse_error",
-            dataset=dataset,
-            original=raw_msg,
-            created=collected_at,
-            ingested=ingested_at,
-        ),
-        host=EcsHostInfo(name=batch.agent.hostname, ip=list(batch.agent.ip)),
-        agent=EcsAgentInfo(id=batch.agent.id, version=batch.agent.version),
-        asp=AspMetaInfo(parse_status=ParseStatus.ERROR),
-    )
 
 
 def _sanitize_pg_text(val: Optional[str]) -> Optional[str]:
@@ -140,13 +116,20 @@ def _insert_event_row(cur: psycopg.Cursor[Any], ev: ECSEvent) -> None:
 
 
 class PostgresLogRepository(ILogRepository):
-    """PostgreSQL implementation of ILogRepository using psycopg v3."""
+    """PostgreSQL implementation of ILogRepository using psycopg v3 (with optional ConnectionPool)."""
 
-    def __init__(self, db_url: str) -> None:
+    def __init__(self, db_url: str, pool: Optional[Any] = None) -> None:
         self._db_url = db_url
+        self._pool = pool
 
-    def _connect(self) -> psycopg.Connection[Any]:
-        return psycopg.connect(self._db_url)
+    @contextmanager
+    def _connect(self) -> Iterator[psycopg.Connection[Any]]:
+        if self._pool is not None:
+            with self._pool.connection() as conn:
+                yield conn
+            return
+        with psycopg.connect(self._db_url) as conn:
+            yield conn
 
     def save_batch_with_parser(
         self,
@@ -199,7 +182,7 @@ class PostgresLogRepository(ILogRepository):
                         try:
                             ecs_event = parser_fn(raw_ev, batch.agent, event_uid, ingested_at)
                         except Exception:
-                            ecs_event = _build_parse_error_event(
+                            ecs_event = build_parse_error_event(
                                 event_uid=event_uid,
                                 raw_msg=raw_ev.message,
                                 collected_at=raw_ev.collected_at,
@@ -273,10 +256,15 @@ class PostgresLogRepository(ILogRepository):
             elif key in _COLUMN_MAP:
                 col, col_type = _COLUMN_MAP[key]
                 if col_type == "inet":
+                    try:
+                        norm_ip = str(ipaddress.ip_address(str(val).strip()))
+                    except ValueError:
+                        return []
                     clauses.append(f"{col} = %s::inet")
+                    params.append(norm_ip)
                 else:
                     clauses.append(f"{col} = %s")
-                params.append(val)
+                    params.append(val)
             else:
                 if not _SAFE_DOTTED_PATH_RE.match(key):
                     raise ValueError(f"Invalid query field path: {key!r}")
@@ -391,13 +379,20 @@ class PostgresLogRepository(ILogRepository):
 
 
 class PostgresAlertRepository(IAlertRepository):
-    """PostgreSQL implementation of IAlertRepository using psycopg v3."""
+    """PostgreSQL implementation of IAlertRepository using psycopg v3 (with optional ConnectionPool)."""
 
-    def __init__(self, db_url: str) -> None:
+    def __init__(self, db_url: str, pool: Optional[Any] = None) -> None:
         self._db_url = db_url
+        self._pool = pool
 
-    def _connect(self) -> psycopg.Connection[Any]:
-        return psycopg.connect(self._db_url)
+    @contextmanager
+    def _connect(self) -> Iterator[psycopg.Connection[Any]]:
+        if self._pool is not None:
+            with self._pool.connection() as conn:
+                yield conn
+            return
+        with psycopg.connect(self._db_url) as conn:
+            yield conn
 
     def _row_to_alert(self, row: Tuple[Any, ...]) -> Alert:
         return Alert(
@@ -929,15 +924,47 @@ class PostgresAlertRepository(IAlertRepository):
                     (Jsonb(payload), now, now, case_id),
                 )
 
+    def close_idle_cases(
+        self,
+        idle_timeout_seconds: int,
+        now: Optional[datetime] = None,
+    ) -> int:
+        ref_now = (
+            now.replace(tzinfo=timezone.utc)
+            if (now is not None and now.tzinfo is None)
+            else (now.astimezone(timezone.utc) if now is not None else datetime.now(timezone.utc))
+        )
+        cutoff = ref_now - timedelta(seconds=max(0, idle_timeout_seconds))
+        with self._connect() as conn:
+            with conn.transaction():
+                cur = conn.execute(
+                    """
+                    UPDATE cases
+                    SET status = 'closed',
+                        updated_at = %s
+                    WHERE status = 'open'
+                      AND last_activity_at < %s
+                    """,
+                    (ref_now, cutoff),
+                )
+                return int(cur.rowcount or 0)
+
 
 class PostgresAuthRepository(IAuthRepository):
-    """PostgreSQL implementation of IAuthRepository for agents and operators."""
+    """PostgreSQL implementation of IAuthRepository for agents and operators (with optional ConnectionPool)."""
 
-    def __init__(self, db_url: str) -> None:
+    def __init__(self, db_url: str, pool: Optional[Any] = None) -> None:
         self._db_url = db_url
+        self._pool = pool
 
-    def _connect(self) -> psycopg.Connection[Any]:
-        return psycopg.connect(self._db_url)
+    @contextmanager
+    def _connect(self) -> Iterator[psycopg.Connection[Any]]:
+        if self._pool is not None:
+            with self._pool.connection() as conn:
+                yield conn
+            return
+        with psycopg.connect(self._db_url) as conn:
+            yield conn
 
     def create_agent(
         self,

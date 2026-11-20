@@ -6,8 +6,9 @@ remaining completely usable standalone without optional dependencies.
 
 from __future__ import annotations
 
+import ipaddress
 import json
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, Field
 
@@ -96,6 +97,25 @@ def _wrap_tool(
 # Tool Suite & Factory Functions
 # ============================================================================
 
+def _validate_search_filter(query_filter: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Validates IP filter keys (`src_ip`, `source.ip`) before passing to repositories
+    so malformed LLM arguments never trigger PostgreSQL `::inet` DataError.
+    """
+    sanitized = dict(query_filter or {})
+    for key in ("src_ip", "source.ip"):
+        if key in sanitized and sanitized[key] is not None:
+            raw_val = str(sanitized[key]).strip()
+            if not raw_val:
+                sanitized.pop(key, None)
+                continue
+            try:
+                sanitized[key] = str(ipaddress.ip_address(raw_val))
+            except ValueError:
+                return None, f"Invalid IP address in query_filter[{key!r}]: {raw_val!r}"
+    return sanitized, None
+
+
 class SecurityAgentTools:
     """
     Read-only tool suite for AI SOC Analysts.
@@ -116,7 +136,10 @@ class SecurityAgentTools:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """Retrieve related normalized ECS logs from the database repository."""
-        events = self.log_repo.find_events(query_filter, limit=limit)
+        sanitized, err = _validate_search_filter(query_filter)
+        if err is not None or sanitized is None:
+            return []
+        events = self.log_repo.find_events(sanitized, limit=limit)
         return [e.to_ecs_dict() for e in events]
 
     def check_ip_reputation(self, ip: str) -> Dict[str, Any]:
@@ -150,7 +173,10 @@ class SecurityAgentTools:
 def create_search_logs_tool(log_repo: ILogRepository) -> Any:
     def search_logs(query_filter: Dict[str, Any], limit: int = 50) -> List[Dict[str, Any]]:
         """Search normalized ECS security logs matching query_filter fields."""
-        events = log_repo.find_events(query_filter, limit=limit)
+        sanitized, err = _validate_search_filter(query_filter)
+        if err is not None or sanitized is None:
+            return []
+        events = log_repo.find_events(sanitized, limit=limit)
         return [e.to_ecs_dict() for e in events]
 
     return _wrap_tool(

@@ -168,7 +168,9 @@ def test_postgres_restart_reloads_sliding_window_and_cooldown():
     db_url = _get_db_url_or_skip()
     agent_id = "test-p53-restart-agent"
     attacker_ip = "198.51.100.91"
-    base_ts = datetime(2026, 11, 10, 10, 0, 10, tzinfo=timezone.utc)
+    now_utc = datetime.now(timezone.utc).replace(microsecond=0)
+    base_ts = now_utc - timedelta(seconds=90)
+    containers: list[Container] = []
 
     def _raw_batch(batch_id: str, start_idx: int, count: int) -> IngestBatchRequest:
         evs = []
@@ -201,6 +203,17 @@ def test_postgres_restart_reloads_sliding_window_and_cooldown():
     try:
         with psycopg.connect(db_url) as conn:
             with conn.transaction():
+                row = conn.execute("SELECT max(ts) FROM events").fetchone()
+                if row and row[0] is not None:
+                    existing_max = row[0]
+                    if existing_max.tzinfo is None:
+                        existing_max = existing_max.replace(tzinfo=timezone.utc)
+                    else:
+                        existing_max = existing_max.astimezone(timezone.utc)
+                    existing_max = existing_max.replace(microsecond=0)
+                    if existing_max > base_ts:
+                        base_ts = existing_max
+
                 conn.execute(
                     """
                     INSERT INTO agents (id, api_key_hash, hostname)
@@ -212,12 +225,14 @@ def test_postgres_restart_reloads_sliding_window_and_cooldown():
 
         # 1. Start server #1 and ingest 4 failures (below threshold 5)
         c1 = Container(db_url=db_url)
+        containers.append(c1)
         res1 = c1.ingestion_service.ingest_batch(_raw_batch("b-p53-1", 0, 4))
         assert res1.accepted == 4
         assert c1.alert_repo.find_open_case_by_key(f"ip:{attacker_ip}") is None
 
         # 2. Simulate full server restart -> fresh store & rule_engine rehydrated from Postgres
         c2 = Container(db_url=db_url)
+        containers.append(c2)
         # No alert should have been emitted just from reloading!
         assert c2.alert_repo.find_open_case_by_key(f"ip:{attacker_ip}") is None
 
@@ -232,12 +247,15 @@ def test_postgres_restart_reloads_sliding_window_and_cooldown():
 
         # 3. Restart AGAIN -> reloads cooldown slot from DB alerts; 6th event must NOT create duplicate alert!
         c3 = Container(db_url=db_url)
+        containers.append(c3)
         res3 = c3.ingestion_service.ingest_batch(_raw_batch("b-p53-3", 5, 1))
         assert res3.accepted == 1
         open_case_after = c3.alert_repo.find_open_case_by_key(f"ip:{attacker_ip}")
         assert open_case_after is not None
         assert len(open_case_after.alerts) == 1
     finally:
+        for c in containers:
+            c.close()
         with psycopg.connect(db_url) as conn:
             with conn.transaction():
                 conn.execute("DELETE FROM alerts WHERE case_id IN (SELECT id FROM cases WHERE case_key = %s)", (f"ip:{attacker_ip}",))

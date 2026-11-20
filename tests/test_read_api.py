@@ -83,7 +83,7 @@ def backend_container(request: pytest.FixtureRequest) -> Iterator[Any]:
         with psycopg.connect(db_url) as conn:
             with conn.transaction():
                 conn.execute(
-                    "DELETE FROM alerts WHERE case_id IN (SELECT id FROM cases WHERE case_key LIKE 'ip:198.51.100.%' OR case_key LIKE 'ip:203.0.113.%' OR case_key LIKE 'host:host-p55%') OR alert_key LIKE 'asp-%'"
+                    "DELETE FROM alerts WHERE case_id IN (SELECT id FROM cases WHERE case_key LIKE 'ip:198.51.100.%' OR case_key LIKE 'ip:203.0.113.%' OR case_key LIKE 'host:host-p55%')"
                 )
                 conn.execute(
                     "DELETE FROM cases WHERE case_key LIKE 'ip:198.51.100.%' OR case_key LIKE 'ip:203.0.113.%' OR case_key LIKE 'host:host-p55%'"
@@ -193,8 +193,18 @@ def test_read_endpoints_auth_filters_pagination_and_phase6_contract(backend_cont
     assert st_ev_user == 200 and len(ev_user) == 1
     assert ev_user[0]["http"]["response"]["status_code"] == 200
 
-    st_ev_unparsed, ev_unparsed = _asgi_call("GET", "/api/v1/events", query={"parse_status": "unparsed"}, headers=read_headers)
+    st_ev_unparsed, ev_unparsed = _asgi_call(
+        "GET",
+        "/api/v1/events",
+        query={
+            "parse_status": "unparsed",
+            "since": now.isoformat(),
+            "until": (now + timedelta(seconds=60)).isoformat(),
+        },
+        headers=read_headers,
+    )
     assert st_ev_unparsed == 200 and len(ev_unparsed) == 1
+    assert ev_unparsed[0]["host"]["name"] == "host-p55"
 
     st_ev_action, ev_action = _asgi_call(
         "GET",
@@ -250,3 +260,48 @@ def test_read_endpoints_auth_filters_pagination_and_phase6_contract(backend_cont
     st_inv, inv_res = _asgi_call("POST", f"/api/v1/cases/{high_case['id']}/investigate", headers=inv_headers)
     assert st_inv == 200
     assert inv_res["agent_verdict"] == "True Positive"
+
+
+def test_investigate_rate_limit_and_inflight_conflict_and_cors():
+    c = reset_container(force_memory=True)
+    inv_tok = generate_token()
+    c.auth_repo.create_operator("op-rate-test", hash_secret(inv_tok), ["read", "investigate"])
+    inv_headers = {"Authorization": f"Bearer {inv_tok}"}
+
+    now = datetime.now(timezone.utc)
+    from server.src.common.schemas import Alert, AlertLevel
+
+    case = c.alert_repo.correlate_alert_to_case(
+        Alert(
+            alert_key="ak-rate-conflict",
+            rule_id="asp-ssh-bruteforce",
+            title="SSH brute force",
+            level=AlertLevel.HIGH,
+            window_start=now,
+            window_end=now,
+            group_key={"source.ip": "203.0.113.195"},
+            event_count=5,
+            event_uids=[],
+        ),
+        case_key="ip:203.0.113.195",
+        source_ip="203.0.113.195",
+    )
+    assert case is not None and case.id is not None
+
+    # 1. Per-case in-flight lock returns HTTP 409 Conflict
+    assert c.try_acquire_case_investigation(case.id) is True
+    try:
+        st_conflict, _ = _asgi_call("POST", f"/api/v1/cases/{case.id}/investigate", headers=inv_headers)
+        assert st_conflict == 409
+    finally:
+        c.release_case_investigation(case.id)
+
+    # 2. Per-operator rate limit returns HTTP 429 Too Many Requests
+    from server.src.common.security import InMemoryRateLimiter
+
+    c.investigate_rate_limiter = InMemoryRateLimiter(rate_per_minute=1)
+    st_ok, _ = _asgi_call("POST", f"/api/v1/cases/{case.id}/investigate", headers=inv_headers)
+    assert st_ok == 200
+    st_429, _ = _asgi_call("POST", f"/api/v1/cases/{case.id}/investigate", headers=inv_headers)
+    assert st_429 == 429
+

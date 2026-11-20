@@ -44,6 +44,7 @@ venv.bak/
 
 # Pytest / Coverage / Testing
 .pytest_cache/
+.pytest_tmp/
 .coverage
 .coverage.*
 htmlcov/
@@ -56,6 +57,7 @@ coverage.xml
 
 # Agentic SOC runtime state & offsets
 .agent_state/
+logs/state.json
 *.offset
 *.log
 !samples/**/*.log

@@ -7,9 +7,12 @@ agent.id verification, batch limits (500 events / 1 MB), and rate limiting.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 from server.src.api.dependencies import (
     get_auth_repository,
@@ -46,7 +49,7 @@ def ingest_logs(
 
     if len(batch.events) > MAX_EVENTS_PER_BATCH:
         raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"Batch exceeds maximum of {MAX_EVENTS_PER_BATCH} events",
         )
 
@@ -65,7 +68,8 @@ def ingest_logs(
             detail="Database temporarily unavailable",
         ) from exc
     except Exception as exc:
+        logger.exception("Failed to process ingestion batch_id=%s", batch.batch_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process ingestion batch: {str(exc)}",
+            detail="Failed to process ingestion batch",
         ) from exc

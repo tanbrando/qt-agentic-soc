@@ -48,10 +48,10 @@ Trạng thái kiểm thử tự động: `114` unit/integration tests trên `.ve
 
 ---
 
-## 4. Các phần đã cắt / hoãn so với Mục 13
+## 4. Trạng thái các hạng mục mở rộng (cập nhật sau Phase 6)
 
-- **Dashboard giao diện web (UI):** hoãn theo thứ tự ưu tiên Mục 13; toàn bộ dữ liệu đã sẵn sàng qua REST API `/api/v1/alerts`, `/api/v1/events`, `/api/v1/cases`, `/api/v1/cases/{id}`.
-- **`audit.log` & parser `auditd` (`/var/log/audit/audit.log`):** hoãn vào phạm vi mở rộng sau Phase 5 (Mục 1.3 & Mục 13).
-- **`psycopg[pool]` connection pooling:** chưa đưa vào sử dụng vì chưa có nhu cầu multi-connection concurrent pool ở quy mô lab một worker (Mục 3 & Phụ lục B).
-- **Lớp AI Agentic hoàn chỉnh (Phase 6):** tích hợp LLM provider (`ILLMClient`), bổ sung đầy đủ AI read-only tools và workflow kiểm chứng -> bàn giao trọn vẹn tại `docs/handover-phase6.md`.
+- **Dashboard giao diện web (UI):** Đã hoàn thiện tại `server/web/` (Overview, Incident Cases, AI Flow Monitor, Telemetry) và phục vụ trực tiếp tại `/` trên FastAPI.
+- **`audit.log` & parser `auditd` (`/var/log/audit/audit.log`):** Đã hoàn thiện tại `server/src/parsers/audit_parser.py` kèm bộ test `tests/test_audit_parser.py` và script kiểm thử `scripts/test_audit_flow.sh`.
+- **`psycopg_pool` connection pooling & Idle Case Reaper:** Đã tích hợp tùy chọn `ConnectionPool` (fallback mượt về `psycopg.connect` nếu chưa cài `psycopg-pool`), background reaper tự đóng case hết hạn im lặng trong FastAPI `lifespan`, tách biến `ASP_AI_DB_URL` cho role chỉ đọc, siết CORS qua `ASP_CORS_ORIGINS`, và rate limit + lock theo `case_id` cho `/api/v1/cases/{id}/investigate`.
+- **Lớp AI Agentic hoàn chỉnh (Phase 6):** Đã tích hợp LangGraph + `GeminiSOCAnalystLLM` (hỗ trợ structured verdict JSON + guardrail chống prompt injection + fallback sang `RuleGuidedSOCAnalystLLM`) và `AbuseIPDBThreatIntelProvider`.
 

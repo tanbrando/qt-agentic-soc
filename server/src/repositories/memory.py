@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import ipaddress
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from server.src.common.schemas import (
@@ -34,6 +34,7 @@ from server.src.repositories.base import (
     ILogRepository,
     OperatorRecord,
     ParserFn,
+    build_parse_error_event,
 )
 
 
@@ -44,31 +45,6 @@ def _get_nested_value(doc: Dict[str, Any], dotted_path: str) -> Any:
             return None
         cur = cur[part]
     return cur
-
-
-def _build_parse_error_event(
-    event_uid: str,
-    raw_msg: str,
-    collected_at: datetime,
-    ingested_at: datetime,
-    batch: IngestBatchRequest,
-) -> ECSEvent:
-    return ECSEvent(
-        timestamp=collected_at,
-        event=EcsEventMeta(
-            id=event_uid,
-            category=["host"],
-            type=["info"],
-            action="parse_error",
-            dataset=f"linux.{batch.events[0].log_type.value}" if batch.events else "linux.syslog",
-            original=raw_msg,
-            created=collected_at,
-            ingested=ingested_at,
-        ),
-        host=EcsHostInfo(name=batch.agent.hostname, ip=list(batch.agent.ip)),
-        agent=EcsAgentInfo(id=batch.agent.id, version=batch.agent.version),
-        asp=AspMetaInfo(parse_status=ParseStatus.ERROR),
-    )
 
 
 class InMemoryLogRepository(ILogRepository):
@@ -112,13 +88,13 @@ class InMemoryLogRepository(ILogRepository):
             try:
                 ecs_event = parser_fn(raw_ev, batch.agent, event_uid, ingested_at)
             except Exception:
-                ecs_event = _build_parse_error_event(
-                    event_uid, raw_ev.message, raw_ev.collected_at, ingested_at, batch
-                )
-                ecs_event.event.dataset = (
-                    "apache.access"
-                    if raw_ev.log_type.value == "apache"
-                    else f"linux.{raw_ev.log_type.value}"
+                ecs_event = build_parse_error_event(
+                    event_uid=event_uid,
+                    raw_msg=raw_ev.message,
+                    collected_at=raw_ev.collected_at,
+                    ingested_at=ingested_at,
+                    batch=batch,
+                    log_type_val=raw_ev.log_type.value,
                 )
 
             if ecs_event.asp.parse_status == ParseStatus.UNPARSED:
@@ -439,6 +415,35 @@ class InMemoryAlertRepository(IAlertRepository):
                 case.artifacts.append(art)
 
         case.updated_at = datetime.now(timezone.utc)
+
+    def close_idle_cases(
+        self,
+        idle_timeout_seconds: int,
+        now: Optional[datetime] = None,
+    ) -> int:
+        ref_now = (
+            now.replace(tzinfo=timezone.utc)
+            if (now is not None and now.tzinfo is None)
+            else (now.astimezone(timezone.utc) if now is not None else datetime.now(timezone.utc))
+        )
+        cutoff = ref_now - timedelta(seconds=max(0, idle_timeout_seconds))
+        closed = 0
+        with self._lock:
+            for case in self._cases.values():
+                if case.status != CaseStatus.OPEN:
+                    continue
+                last_act = (
+                    case.last_activity_at.replace(tzinfo=timezone.utc)
+                    if case.last_activity_at.tzinfo is None
+                    else case.last_activity_at.astimezone(timezone.utc)
+                )
+                if last_act < cutoff:
+                    case.status = CaseStatus.CLOSED
+                    case.updated_at = ref_now
+                    if self._open_case_by_key.get(case.case_key) == case.id:
+                        del self._open_case_by_key[case.case_key]
+                    closed += 1
+        return closed
 
 
 class InMemoryAuthRepository(IAuthRepository):

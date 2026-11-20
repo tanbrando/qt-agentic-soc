@@ -27,6 +27,7 @@ class ServerConfig:
     """Runtime configuration populated from environment variables."""
 
     db_url: Optional[str]
+    ai_db_url: Optional[str]
     server_host: str
     server_port: int
     log_level: str
@@ -36,12 +37,20 @@ class ServerConfig:
     case_idle_timeout: str
     rules_dir: str
     rate_limit_ingest: int
+    rate_limit_investigate: int
+    cors_origins: tuple[str, ...]
 
     @classmethod
     def from_env(cls) -> ServerConfig:
         """Reads configuration directly from os.environ with safe defaults."""
+        raw_origins = os.environ.get(
+            "ASP_CORS_ORIGINS",
+            "http://127.0.0.1:8000,http://localhost:8000",
+        )
+        cors_origins = tuple(o.strip() for o in raw_origins.split(",") if o.strip())
         return cls(
             db_url=os.environ.get("ASP_DB_URL") or None,
+            ai_db_url=os.environ.get("ASP_AI_DB_URL") or None,
             server_host=os.environ.get("SOC_SERVER_HOST", "0.0.0.0"),
             server_port=int(os.environ.get("SOC_SERVER_PORT", "8000")),
             log_level=os.environ.get("SOC_LOG_LEVEL", "INFO"),
@@ -51,5 +60,7 @@ class ServerConfig:
             case_idle_timeout=os.environ.get("ASP_CASE_IDLE_TIMEOUT", "6h"),
             rules_dir=os.environ.get("ASP_RULES_DIR", "rules/"),
             rate_limit_ingest=int(os.environ.get("ASP_RATE_LIMIT_INGEST", "120")),
+            rate_limit_investigate=int(os.environ.get("ASP_RATE_LIMIT_INVESTIGATE", "20")),
+            cors_origins=cors_origins,
         )
 

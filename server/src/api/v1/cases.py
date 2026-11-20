@@ -12,12 +12,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from server.src.agent.base import IAgentInvestigator
 from server.src.api.dependencies import (
+    Container,
     get_agent_investigator,
     get_alert_repository,
+    get_container,
+    get_investigate_rate_limiter,
     require_operator_scope,
     validate_optional_ip,
 )
 from server.src.common.schemas import AlertLevel, Case, CaseStatus, CaseStatusUpdate
+from server.src.common.security import InMemoryRateLimiter
 from server.src.repositories.base import IAlertRepository, OperatorRecord
 
 router = APIRouter(prefix="/api/v1/cases", tags=["Cases"])
@@ -66,10 +70,28 @@ def trigger_case_investigation(
     _operator: OperatorRecord = Depends(require_operator_scope("investigate")),
     repo: IAlertRepository = Depends(get_alert_repository),
     investigator: IAgentInvestigator = Depends(get_agent_investigator),
+    rate_limiter: InMemoryRateLimiter = Depends(get_investigate_rate_limiter),
+    container: Container = Depends(get_container),
 ) -> Case:
     """
     Triggers an autonomous AI agent investigation on the specified case.
+    Enforces per-operator rate limiting (HTTP 429) and per-case in-flight locking (HTTP 409).
     """
+    effective_limiter = (
+        rate_limiter
+        if isinstance(rate_limiter, InMemoryRateLimiter)
+        else get_investigate_rate_limiter()
+    )
+    effective_container = (
+        container if isinstance(container, Container) else get_container()
+    )
+
+    if not effective_limiter.allow(_operator.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Investigation rate limit exceeded",
+        )
+
     case = repo.get_case(case_id)
     if not case:
         raise HTTPException(
@@ -77,11 +99,20 @@ def trigger_case_investigation(
             detail=f"Case with ID {case_id} not found",
         )
 
-    report_update = investigator.investigate_case(case)
-    repo.update_case_with_agent_report(
-        case_id=case_id,
-        report_data=report_update.model_dump(),
-    )
+    if not effective_container.try_acquire_case_investigation(case_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Case {case_id} is already being investigated",
+        )
+
+    try:
+        report_update = investigator.investigate_case(case)
+        repo.update_case_with_agent_report(
+            case_id=case_id,
+            report_data=report_update.model_dump(),
+        )
+    finally:
+        effective_container.release_case_investigation(case_id)
 
     updated_case = repo.get_case(case_id)
     assert updated_case is not None

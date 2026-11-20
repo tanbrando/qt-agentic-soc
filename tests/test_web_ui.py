@@ -57,7 +57,23 @@ def test_web_dashboard_routes_and_static_assets():
     static_mounts = [r for r in app.routes if isinstance(r, Mount) and r.path == "/static"]
     assert len(static_mounts) == 1
 
-    for asset_name in ("styles.css", "markdown.js", "app.js"):
+    for asset_name in (
+        "styles.css",
+        "markdown.js",
+        "app.js",
+        "css/tokens.css",
+        "css/layout.css",
+        "css/components.css",
+        "css/views.css",
+        "js/state.js",
+        "js/ui.js",
+        "js/api.js",
+        "js/charts.js",
+        "js/views/overview.js",
+        "js/views/cases.js",
+        "js/views/aiFlow.js",
+        "js/views/telemetry.js",
+    ):
         asset_path = WEB_DIR / asset_name
         assert asset_path.is_file()
         assert len(asset_path.read_text(encoding="utf-8")) > 0

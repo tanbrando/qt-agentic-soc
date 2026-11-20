@@ -7,13 +7,24 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import logging
 import threading
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, Set
 
 import psycopg
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+try:
+    from psycopg_pool import ConnectionPool  # type: ignore
+
+    HAS_PSYCOPG_POOL = True
+except ImportError:
+    ConnectionPool = None  # type: ignore
+    HAS_PSYCOPG_POOL = False
+
+logger = logging.getLogger(__name__)
 
 from server.src.agent.base import IAgentInvestigator
 from server.src.agent.workflow import create_investigator
@@ -50,11 +61,27 @@ class Container:
     def __init__(self, db_url: Optional[str] = None, force_memory: bool = False) -> None:
         cfg = ServerConfig.from_env()
         effective_db_url = None if force_memory else (db_url or cfg.db_url)
+        effective_ai_db_url = None if force_memory else cfg.ai_db_url
+
+        self._db_pool: Optional[Any] = None
+        self._ai_db_pool: Optional[Any] = None
 
         if effective_db_url:
-            self.log_repo: ILogRepository = PostgresLogRepository(effective_db_url)
-            self.alert_repo: IAlertRepository = PostgresAlertRepository(effective_db_url)
-            self.auth_repo: IAuthRepository = PostgresAuthRepository(effective_db_url)
+            if HAS_PSYCOPG_POOL and ConnectionPool is not None:
+                try:
+                    self._db_pool = ConnectionPool(
+                        conninfo=effective_db_url,
+                        min_size=1,
+                        max_size=10,
+                        open=True,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to initialize psycopg ConnectionPool; falling back to direct connections: %s", exc)
+                    self._db_pool = None
+
+            self.log_repo: ILogRepository = PostgresLogRepository(effective_db_url, pool=self._db_pool)
+            self.alert_repo: IAlertRepository = PostgresAlertRepository(effective_db_url, pool=self._db_pool)
+            self.auth_repo: IAuthRepository = PostgresAuthRepository(effective_db_url, pool=self._db_pool)
         else:
             self.log_repo = InMemoryLogRepository()
             self.alert_repo = InMemoryAlertRepository()
@@ -63,6 +90,10 @@ class Container:
         self.window_store = InMemorySlidingWindowStore()
         self.engine_lock = threading.Lock()
         self.rate_limiter = InMemoryRateLimiter(rate_per_minute=cfg.rate_limit_ingest)
+        self.investigate_rate_limiter = InMemoryRateLimiter(rate_per_minute=cfg.rate_limit_investigate)
+        self._in_flight_lock = threading.Lock()
+        self._in_flight_cases: Set[int] = set()
+        self.case_idle_timeout_seconds = parse_duration_seconds(cfg.case_idle_timeout)
 
         allowed_lateness_sec = parse_duration_seconds(cfg.allowed_lateness)
         rules_path = Path(cfg.rules_dir)
@@ -99,15 +130,56 @@ class Container:
             engine_lock=self.engine_lock,
             default_timezone=cfg.default_timezone,
             future_tolerance_seconds=parse_duration_seconds(cfg.future_ts_tolerance),
-            case_idle_timeout_seconds=parse_duration_seconds(cfg.case_idle_timeout),
+            case_idle_timeout_seconds=self.case_idle_timeout_seconds,
         )
 
+        ai_log_repo: ILogRepository = self.log_repo
+        ai_alert_repo: IAlertRepository = self.alert_repo
+        if effective_ai_db_url and effective_ai_db_url != effective_db_url:
+            if HAS_PSYCOPG_POOL and ConnectionPool is not None:
+                try:
+                    self._ai_db_pool = ConnectionPool(
+                        conninfo=effective_ai_db_url,
+                        min_size=1,
+                        max_size=5,
+                        open=True,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to initialize AI read-only ConnectionPool: %s", exc)
+                    self._ai_db_pool = None
+            ai_log_repo = PostgresLogRepository(effective_ai_db_url, pool=self._ai_db_pool)
+            ai_alert_repo = PostgresAlertRepository(effective_ai_db_url, pool=self._ai_db_pool)
+
         investigator = create_investigator(
-            log_repository=self.log_repo,
-            alert_repository=self.alert_repo,
+            log_repository=ai_log_repo,
+            alert_repository=ai_alert_repo,
         )
         self.threat_intel = investigator.threat_intel
         self.agent_investigator: IAgentInvestigator = investigator
+
+    def try_acquire_case_investigation(self, case_id: int) -> bool:
+        """Marks a case as actively under investigation; returns False if already running."""
+        with self._in_flight_lock:
+            if case_id in self._in_flight_cases:
+                return False
+            self._in_flight_cases.add(case_id)
+            return True
+
+    def release_case_investigation(self, case_id: int) -> None:
+        """Releases the in-flight investigation lock for case_id."""
+        with self._in_flight_lock:
+            self._in_flight_cases.discard(case_id)
+
+    def close(self) -> None:
+        """Closes any open PostgreSQL connection pools cleanly."""
+        for pool_attr in ("_ai_db_pool", "_db_pool"):
+            pool = getattr(self, pool_attr, None)
+            if pool is not None:
+                try:
+                    pool.close()
+                except Exception as exc:
+                    logger.warning("Error closing %s: %s", pool_attr, exc)
+                setattr(self, pool_attr, None)
 
 
 _container: Optional[Container] = None
@@ -123,6 +195,8 @@ def get_container() -> Container:
 def reset_container(db_url: Optional[str] = None, force_memory: bool = False) -> Container:
     """Resets container (useful for test isolation)."""
     global _container
+    if _container is not None:
+        _container.close()
     _container = Container(db_url=db_url, force_memory=force_memory)
     return _container
 
@@ -147,6 +221,10 @@ def get_rate_limiter() -> InMemoryRateLimiter:
     return get_container().rate_limiter
 
 
+def get_investigate_rate_limiter() -> InMemoryRateLimiter:
+    return get_container().investigate_rate_limiter
+
+
 def get_agent_investigator() -> IAgentInvestigator:
     return get_container().agent_investigator
 
@@ -159,7 +237,7 @@ def validate_optional_ip(ip_value: Optional[str]) -> Optional[str]:
         return str(ipaddress.ip_address(ip_value.strip()))
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid source_ip filter: {ip_value!r}",
         ) from exc
 

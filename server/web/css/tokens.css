@@ -1,0 +1,132 @@
+:root {
+  --bg: #f4f6f9;
+  --bg-sidebar: #ffffff;
+  --bg-elevated: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #64748b;
+  --accent: #0284c7;
+  --accent-strong: #0369a1;
+  --accent-soft: #e0f2fe;
+
+  /* Severity & semantic colors (distinct Critical Red / High Orange / Medium Yellow / Low Blue) */
+  --critical: #dc2626;
+  --high: #f97316;
+  --medium: #facc15;
+  --medium-text: #854d0e;
+  --low: #2563eb;
+  --success: #16a34a;
+  --purple: #7c3aed;
+
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 12px 32px rgba(15, 23, 42, 0.14);
+  --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--mono);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Hide jarring scrollbars on internal containers while preserving smooth wheel/touch scrolling */
+.sidebar,
+.main-content,
+.case-queue-list,
+.trace-timeline,
+.langgraph-diagram,
+.table-scroll,
+.markdown-body,
+.markdown-body pre,
+.code-block,
+.code-block-tall {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sidebar::-webkit-scrollbar,
+.main-content::-webkit-scrollbar,
+.case-queue-list::-webkit-scrollbar,
+.trace-timeline::-webkit-scrollbar,
+.langgraph-diagram::-webkit-scrollbar,
+.table-scroll::-webkit-scrollbar,
+.markdown-body::-webkit-scrollbar,
+.markdown-body pre::-webkit-scrollbar,
+.code-block::-webkit-scrollbar,
+.code-block-tall::-webkit-scrollbar {
+  display: none;
+}
+
+/* ==================== FONTAWESOME SVG MASK ICONS ==================== */
+.ui-icon {
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask-image: var(--icon-url);
+  mask-image: var(--icon-url);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  vertical-align: middle;
+}
+
+.ui-icon-xs {
+  width: 13px;
+  height: 13px;
+}
+
+.ui-icon-sm {
+  width: 15px;
+  height: 15px;
+}
+
+.ui-icon-lg {
+  width: 24px;
+  height: 24px;
+}
+
+.ui-icon-spin {
+  animation: uiIconSpin 1s linear infinite;
+}
+
+@keyframes uiIconSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

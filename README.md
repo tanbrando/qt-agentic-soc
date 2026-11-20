@@ -9,8 +9,10 @@ Hệ thống SIEM thu thập, chuẩn hóa ECS, phát hiện mối đe dọa b�
 ```text
 qt-agentic-soc/
 ├── .env.example                 # Mẫu biến môi trường duy nhất (copy thành .env để chạy)
-├── client_setup.sh              # Cài .venv-client trên Ubuntu/Linux và chạy thu thập log
-├── server_setup.sh              # Cài venv Server, chạy migration DB và bật Uvicorn
+├── setup/
+│   ├── client_setup.sh          # Cài .venv-client trên Ubuntu/Linux và chạy thu thập log
+│   ├── server_setup.bat         # Cài .venv Server trên Windows, chạy migration DB và bật Uvicorn
+│   └── create_newClient.bat     # Đăng ký/xoay khóa Agent và tự động cập nhật .env
 ├── requirements.txt             # Thư viện Python cho Server & Test
 ├── client/
 │   ├── collector.py             # Agent mỏng đọc log theo (device, inode, stream_id, offset) + spool
@@ -27,16 +29,17 @@ qt-agentic-soc/
 │   ├── asp_reparse.py           # Parse lại từ events_raw -> events
 │   └── asp_logtest.py           # Test nhanh parser + YAML rule offline
 ├── server/
-│   ├── main.py                  # FastAPI entrypoint (chạy --workers 1)
+│   ├── main.py                  # FastAPI entrypoint (chạy --workers 1, lifespan reaper + pool)
+│   ├── web/                     # SOC Web Dashboard SPA (Overview, Cases, AI Flow, Telemetry)
 │   └── src/
 │       ├── common/              # schemas.py (ECS v1.1 + Alert/Case), config.py, security.py
 │       ├── parsers/             # auth_parser, audit_parser, syslog_parser, apache_parser
 │       ├── engine/              # loader.py, generic_rules.py, state_store.py, recovery.py
-│       ├── repositories/        # memory.py & postgres.py (psycopg v3 đồng bộ)
+│       ├── repositories/        # memory.py & postgres.py (psycopg v3 + optional ConnectionPool)
 │       ├── services/            # ingestion_service.py (raw-first, lock, case lifecycle)
 │       ├── api/                 # v1/ingest.py, alerts.py, events.py, cases.py + auth
-│       └── agent/               # Khung bàn giao Phase 6 (AI Agentic)
-├── docs/                        # handover-phase6.md, demo.md, final-review.md, phase0-report.md
+│       └── agent/               # LangGraph AI Investigator (Gemini + Threat Intel + Guardrail)
+├── docs/                        # AGENTIC_SOC_HANDOVER.md, demo.md, final-review.md
 └── tests/                       # Bộ test tự động pytest (InMemory + PostgreSQL)
 ```
 
@@ -51,6 +54,7 @@ Chỉ dùng **một file `.env` duy nhất** (copy từ `.env.example`, không c
 | `ASP_DB_URL`                                                                                                                                           | Server & Tools  | Chuỗi kết nối PostgreSQL (`postgresql://postgres:<MAT_KHAU>@localhost:5432/asp_db`)                                        |
 | `SOC_SERVER_HOST`, `SOC_SERVER_PORT`, `SOC_LOG_LEVEL`                                                                                              | Server          | Địa chỉ, cổng lắng nghe và mức log server                                                                                |
 | `ASP_DEFAULT_TIMEZONE`, `ASP_FUTURE_TS_TOLERANCE`, `ASP_ALLOWED_LATENESS`, `ASP_CASE_IDLE_TIMEOUT`, `ASP_RULES_DIR`, `ASP_RATE_LIMIT_INGEST` | Server Engine   | Múi giờ mặc định, ngưỡng thời gian tương lai/đến muộn, timeout đóng case, thư mục rule YAML, rate limit ingest |
+| `ASP_CORS_ORIGINS`, `ASP_RATE_LIMIT_INVESTIGATE`, `ASP_AI_DB_URL`                                                                                      | Server Security | Danh sách origin CORS cho phép, rate limit `/investigate` theo operator, chuỗi kết nối DB chỉ đọc cho AI Agent |
 | `ASP_SERVER_URL`, `ASP_AGENT_ID`, `ASP_VERIFY_TLS`                                                                                                 | Client          | URL server nhận log, ID của agent (khớp DB), bật/tắt kiểm tra TLS                                                         |
 | `ASP_AGENT_API_KEY`                                                                                                                                    | Client          | API key của agent (sinh bằng `tools/asp_admin.py create-agent`)                                                             |
 | `ASP_OP_TOKEN`                                                                                                                                         | SOC / API đọc | Token operator để gọi `/api/v1/alerts`, `/events`, `/cases`, `/investigate`                                          |
@@ -102,7 +106,7 @@ setup\create_newClient.bat web-02
 
 Sau khi Bước 3.2 đã cập nhật `ASP_AGENT_ID` và `ASP_AGENT_API_KEY` vào `.env`:
 
-1. Copy toàn bộ thư mục dự án (hoặc file `.env`) sang máy Ubuntu (nếu dùng chung trên WSL thì thư mục đã có sẵn tại `/mnt/d/ATTT/CK/qt-agentic-soc`).
+1. Copy toàn bộ thư mục dự án (hoặc file `.env`) sang máy Ubuntu (nếu dùng chung trên WSL thì truy cập trực tiếp qua `/mnt/<ổ-đĩa>/.../qt-agentic-soc`).
 2. Mở terminal trên Ubuntu và chỉ cần chạy 1 lệnh duy nhất:
 
 ```bash
@@ -127,7 +131,7 @@ bash setup/client_setup.sh --setup-only
 Dự án cung cấp bộ công cụ kiểm thử toàn diện cả kịch bản tấn công SIEM Rules và kiểm thử Linux Audit Log:
 
 1. **Bảng Tra Cứu Lệnh Test Tay Thật 100% (Chạy thẳng trên Terminal không cần script):**
-   - Xem chi tiết tại [docs/demo.md](file:///d:/ATTT/CK/qt-agentic-soc/docs/demo.md) hoặc gõ `bash scripts/test_ubuntu_attacks.sh` rồi chọn `9` để lấy bảng lệnh copy & paste.
+   - Xem chi tiết tại [docs/demo.md](docs/demo.md) hoặc gõ `bash scripts/test_ubuntu_attacks.sh` rồi chọn `9` để lấy bảng lệnh copy & paste.
 
 2. **Kiểm thử Chuyên Sâu Linux Audit Log (`/var/log/audit/audit.log`):**
    ```bash
@@ -150,6 +154,6 @@ Dự án cung cấp bộ công cụ kiểm thử toàn diện cả kịch bản 
 
 - Test toàn bộ hệ thống: `.\.venv\Scripts\python.exe -m pytest -v`
 - Kiểm thử rule YAML offline: `python tools/asp_logtest.py --file samples/rules/ssh_bruteforce_pos.log --type auth`
-- Hướng dẫn demo chi tiết: [docs/demo.md](file:///d:/ATTT/CK/qt-agentic-soc/docs/demo.md)
-- Tài liệu bàn giao cho team AI Agentic SOC: [docs/AGENTIC_SOC_HANDOVER.md](file:///d:/ATTT/CK/qt-agentic-soc/docs/AGENTIC_SOC_HANDOVER.md)
-- Đánh giá thiết kế & giới hạn: [docs/final-review.md](file:///d:/ATTT/CK/qt-agentic-soc/docs/final-review.md)
+- Hướng dẫn demo chi tiết: [docs/demo.md](docs/demo.md)
+- Tài liệu bàn giao cho team AI Agentic SOC: [docs/AGENTIC_SOC_HANDOVER.md](docs/AGENTIC_SOC_HANDOVER.md)
+- Đánh giá thiết kế & giới hạn: [docs/final-review.md](docs/final-review.md)

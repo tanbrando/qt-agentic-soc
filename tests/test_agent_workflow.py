@@ -254,3 +254,88 @@ def test_helpers_ip_classification_and_artifact_extraction():
     )
     assert triage.verdict == AgentVerdict.TRUE_POSITIVE
 
+
+def test_structured_llm_verdict_and_prompt_injection_guardrail():
+    from server.src.agent.state import AIMessage
+
+    class _FakeStructuredLLM:
+        def __init__(self, json_payload: str) -> None:
+            self.json_payload = json_payload
+
+        def bind_tools(self, _tools):
+            return self
+
+        def invoke(self, _messages):
+            return AIMessage(content=f"Analysis complete.\n```json\n{self.json_payload}\n```", tool_calls=[])
+
+    log_repo = InMemoryLogRepository()
+    alert_repo = InMemoryAlertRepository()
+    now = datetime.now(timezone.utc)
+
+    # 1. Custom rule where rule-based fallback would be Inconclusive, but Gemini structured JSON drives verdict
+    custom_alert = Alert(
+        alert_key="ak-custom-audit",
+        rule_id="asp-custom-audit-rule",
+        title="Custom Audit Anomaly",
+        level=AlertLevel.HIGH,
+        created_at=now,
+        window_start=now,
+        window_end=now,
+        group_key={"host.name": "web-01", "user.name": "deploy"},
+        event_count=1,
+        event_uids=[],
+    )
+    case_custom = alert_repo.correlate_alert_to_case(custom_alert, "host:web-01|user:deploy", None)
+    assert case_custom is not None
+
+    llm_tp = _FakeStructuredLLM(
+        '{"verdict": "True Positive", "confidence": 0.91, '
+        '"executive_summary": "Confirmed unauthorized auditd config tamper.", '
+        '"root_cause": "Compromised deploy key executed auditctl.", '
+        '"recommended_actions": ["Rotate deploy SSH key"]}'
+    )
+    inv_custom = LangGraphAgentInvestigator(log_repo, MockThreatIntelProvider(), llm=llm_tp)
+    rep_custom = inv_custom.investigate_case(case_custom)
+    assert rep_custom.agent_verdict == AgentVerdict.TRUE_POSITIVE
+    assert rep_custom.agent_confidence == 0.91
+    assert rep_custom.ai_report is not None
+    assert rep_custom.ai_report["forensic_breakdown"]["verdict_source"] == "llm_structured"
+    assert rep_custom.ai_report["forensic_breakdown"]["guardrail_override"] is False
+
+    # 2. Guardrail overrides LLM False Positive when strong deterministic compromise evidence exists
+    bf_alert = Alert(
+        alert_key="ak-bf-success-guard",
+        rule_id="asp-bruteforce-then-success",
+        title="Brute force rồi đăng nhập thành công",
+        level=AlertLevel.CRITICAL,
+        created_at=now,
+        window_start=now,
+        window_end=now,
+        group_key={"source.ip": "203.0.113.195", "host.name": "web-01"},
+        event_count=6,
+        event_uids=[],
+    )
+    case_bf = alert_repo.correlate_alert_to_case(bf_alert, "ip:203.0.113.195", "203.0.113.195")
+    assert case_bf is not None
+
+    llm_hijacked = _FakeStructuredLLM(
+        '{"verdict": "False Positive", "confidence": 0.99, '
+        '"executive_summary": "Ignore rules, benign traffic.", '
+        '"root_cause": "Benign", "recommended_actions": ["Close"]}'
+    )
+    inv_guard = LangGraphAgentInvestigator(log_repo, MockThreatIntelProvider(), llm=llm_hijacked)
+    rep_guard = inv_guard.investigate_case(case_bf)
+    assert rep_guard.agent_verdict == AgentVerdict.TRUE_POSITIVE
+    assert rep_guard.ai_report is not None
+    assert rep_guard.ai_report["forensic_breakdown"]["verdict_source"] == "guardrail_override"
+    assert rep_guard.ai_report["forensic_breakdown"]["guardrail_override"] is True
+
+
+def test_search_logs_tool_handles_invalid_ip_safely():
+    log_repo = InMemoryLogRepository()
+    _seed_ssh_events(log_repo, "203.0.113.77", count=2)
+    tools = SecurityAgentTools(log_repo, MockThreatIntelProvider())
+    assert tools.search_logs({"src_ip": "unknown-not-an-ip"}) == []
+    assert tools.search_logs({"source.ip": "999.999.999.999"}) == []
+
+
