@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from server.src.agent.prompts import (
@@ -25,11 +27,58 @@ from server.src.agent.state import (
 from server.src.agent.triage import (
     build_investigation_markdown_report,
     evaluate_forensic_evidence,
+    is_ip_private_or_local,
 )
 from server.src.common.schemas import ArtifactType, Case
 from server.src.repositories.base import IAlertRepository
 
 logger = logging.getLogger("agentic_soc.agent.nodes")
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _append_trace_step(
+    existing_steps: Optional[List[Dict[str, Any]]],
+    *,
+    node: str,
+    title: str,
+    summary: str,
+    duration_ms: float,
+    status: str = "completed",
+    details: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    steps = list(existing_steps or [])
+    steps.append(
+        {
+            "step": len(steps) + 1,
+            "node": node,
+            "title": title,
+            "status": status,
+            "timestamp": _utc_now_iso(),
+            "duration_ms": round(max(0.0, duration_ms), 2),
+            "summary": summary,
+            "details": details or {},
+        }
+    )
+    return steps
+
+
+def _summarize_tool_output(func_name: Optional[str], result: Any) -> str:
+    if isinstance(result, dict):
+        if "error" in result:
+            return f"Error: {result['error']}"
+        if func_name == "check_ip_reputation":
+            ip = result.get("ip", "?")
+            score = result.get("reputation_score", "N/A")
+            vendor = result.get("vendor") or result.get("reputation_vendor") or "ThreatIntel"
+            return f"IP {ip} → Score {score}/100 ({vendor})"
+        return f"Dict keys: {', '.join(list(result.keys())[:5])}"
+    if isinstance(result, list):
+        return f"Returned {len(result)} ECS record(s)"
+    text = str(result)
+    return text[:140] + ("..." if len(text) > 140 else "")
 
 
 def extract_artifact_from_tool_result(
@@ -78,6 +127,7 @@ def make_load_case_context_node(alert_repo: Optional[IAlertRepository] = None) -
     """Node 1: Normalizes Case details and initializes the prompt context."""
 
     def load_case_context(state: InvestigationState) -> Dict[str, Any]:
+        t0 = time.perf_counter()
         case_obj: Optional[Case] = state.get("case_obj")
         case_id = state.get("case_id")
 
@@ -135,12 +185,32 @@ def make_load_case_context_node(alert_repo: Optional[IAlertRepository] = None) -
             HumanMessage(content=intro_msg),
         ]
 
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        trace_steps = _append_trace_step(
+            state.get("trace_steps"),
+            node="load_case_context",
+            title="Load Case & Alert Context",
+            summary=(
+                f"Case #{case_info.get('case_id')} ({case_info.get('level', 'medium').upper()}) · "
+                f"Source IP: {case_info.get('source_ip') or 'N/A'} · "
+                f"{len(case_info.get('alerts', []))} correlated alert(s)"
+            ),
+            duration_ms=elapsed_ms,
+            details={
+                "case_key": case_info.get("case_key"),
+                "hostname": case_info.get("hostname"),
+                "source_ip": case_info.get("source_ip"),
+                "alert_rules": [a.get("rule_id") for a in case_info.get("alerts", [])],
+            },
+        )
+
         return {
             "case_data": case_info,
             "messages": messages,
             "evidence_logs": state.get("evidence_logs") or [],
             "artifacts": state.get("artifacts") or [],
             "iteration_count": 0,
+            "trace_steps": trace_steps,
         }
 
     return load_case_context
@@ -151,8 +221,10 @@ def make_agent_reasoning_node(llm: Any, tools: Sequence[Any]) -> Callable:
     bound_llm = llm.bind_tools(tools) if hasattr(llm, "bind_tools") else llm
 
     def agent_reasoning(state: InvestigationState) -> Dict[str, Any]:
+        t0 = time.perf_counter()
         messages = state.get("messages", [])
         iter_count = state.get("iteration_count", 0) + 1
+        step_status = "completed"
 
         try:
             if hasattr(bound_llm, "invoke"):
@@ -161,6 +233,7 @@ def make_agent_reasoning_node(llm: Any, tools: Sequence[Any]) -> Callable:
                 ai_response = bound_llm(messages)
         except Exception as exc:
             logger.error("LLM reasoning invocation error: %s", exc)
+            step_status = "error"
             ai_response = AIMessage(
                 content=f"Error during LLM reasoning: {exc}. Proceeding to synthesis."
             )
@@ -170,9 +243,44 @@ def make_agent_reasoning_node(llm: Any, tools: Sequence[Any]) -> Callable:
             tool_calls = getattr(ai_response, "tool_calls", [])
             ai_response = AIMessage(content=content, tool_calls=tool_calls)
 
+        tool_calls = getattr(ai_response, "tool_calls", None) or []
+        if not tool_calls and hasattr(ai_response, "additional_kwargs"):
+            tool_calls = ai_response.additional_kwargs.get("tool_calls", []) or []
+
+        planned_tools = [
+            {
+                "name": tc.get("name") or (tc.get("function") or {}).get("name") or "unknown",
+                "args": tc.get("args") or (tc.get("function") or {}).get("arguments") or {},
+            }
+            for tc in tool_calls
+        ]
+        content_preview = (getattr(ai_response, "content", "") or "").strip()
+        if planned_tools:
+            tool_names = ", ".join(t["name"] for t in planned_tools)
+            summary = f"Iteration #{iter_count}: Planned {len(planned_tools)} tool call(s) → {tool_names}"
+        else:
+            summary = f"Iteration #{iter_count}: Reasoning complete, routing to Verdict Synthesis"
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        trace_steps = _append_trace_step(
+            state.get("trace_steps"),
+            node="agent_reasoning",
+            title=f"AI Reasoning (Iteration {iter_count})",
+            summary=summary,
+            duration_ms=elapsed_ms,
+            status=step_status,
+            details={
+                "iteration": iter_count,
+                "llm_class": type(llm).__name__,
+                "thought": content_preview[:600],
+                "planned_tool_calls": planned_tools,
+            },
+        )
+
         return {
             "messages": [ai_response],
             "iteration_count": iter_count,
+            "trace_steps": trace_steps,
         }
 
     return agent_reasoning
@@ -183,6 +291,7 @@ def make_tool_execution_node(tools: Sequence[Any]) -> Callable:
     tool_map = {getattr(tool, "name", str(tool)): tool for tool in tools}
 
     def tool_execution(state: InvestigationState) -> Dict[str, Any]:
+        t0 = time.perf_counter()
         messages = state.get("messages", [])
         if not messages:
             return {}
@@ -195,8 +304,10 @@ def make_tool_execution_node(tools: Sequence[Any]) -> Callable:
         tool_messages: List[BaseMessage] = []
         new_artifacts: List[Dict[str, Any]] = list(state.get("artifacts", []))
         new_evidence_logs: List[Dict[str, Any]] = list(state.get("evidence_logs", []))
+        tool_traces: List[Dict[str, Any]] = []
 
         for tc in tool_calls:
+            tc_t0 = time.perf_counter()
             call_id = tc.get("id", f"call_{len(tool_messages)}")
             func_name = tc.get("name") or tc.get("function", {}).get("name")
             args = tc.get("args") or tc.get("function", {}).get("arguments", {})
@@ -208,8 +319,11 @@ def make_tool_execution_node(tools: Sequence[Any]) -> Callable:
                     args = {"input": args}
 
             tool_instance = tool_map.get(func_name)
+            tc_status = "completed"
             if not tool_instance:
-                res_str = json.dumps({"error": f"Tool '{func_name}' not found"})
+                tc_status = "error"
+                result: Any = {"error": f"Tool '{func_name}' not found"}
+                res_str = json.dumps(result)
             else:
                 try:
                     if hasattr(tool_instance, "invoke"):
@@ -236,7 +350,19 @@ def make_tool_execution_node(tools: Sequence[Any]) -> Callable:
                     )
                 except Exception as exc:
                     logger.error("Error executing tool %s: %s", func_name, exc)
-                    res_str = json.dumps({"error": str(exc)})
+                    tc_status = "error"
+                    result = {"error": str(exc)}
+                    res_str = json.dumps(result)
+
+            tool_traces.append(
+                {
+                    "tool": func_name or "unknown_tool",
+                    "args": args,
+                    "status": tc_status,
+                    "duration_ms": round((time.perf_counter() - tc_t0) * 1000.0, 2),
+                    "output_summary": _summarize_tool_output(func_name, result),
+                }
+            )
 
             tool_messages.append(
                 ToolMessage(
@@ -246,10 +372,26 @@ def make_tool_execution_node(tools: Sequence[Any]) -> Callable:
                 )
             )
 
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        executed_names = ", ".join(t["tool"] for t in tool_traces) or "none"
+        trace_steps = _append_trace_step(
+            state.get("trace_steps"),
+            node="tool_execution",
+            title=f"Execute {len(tool_traces)} Tool(s)",
+            summary=f"Executed: {executed_names} · Collected {len(new_evidence_logs)} log(s), {len(new_artifacts)} IoC(s)",
+            duration_ms=elapsed_ms,
+            details={
+                "tools": tool_traces,
+                "total_evidence_logs": len(new_evidence_logs),
+                "total_artifacts": len(new_artifacts),
+            },
+        )
+
         return {
             "messages": tool_messages,
             "artifacts": new_artifacts,
             "evidence_logs": new_evidence_logs,
+            "trace_steps": trace_steps,
         }
 
     return tool_execution
@@ -259,6 +401,7 @@ def make_synthesize_verdict_node() -> Callable:
     """Node 4: Synthesizes final verdict, confidence, AI narrative, and Markdown executive report."""
 
     def synthesize_verdict(state: InvestigationState) -> Dict[str, Any]:
+        t0 = time.perf_counter()
         case_data = state.get("case_data", {})
         artifacts = state.get("artifacts", [])
         evidence_logs = state.get("evidence_logs", [])
@@ -299,12 +442,49 @@ def make_synthesize_verdict_node() -> Callable:
             llm_analysis=llm_analysis,
         )
 
+        max_rep_score = max(
+            (float(art.get("reputation_score") or 0.0) for art in artifacts),
+            default=0.0,
+        )
+        source_ip = case_data.get("source_ip")
+        forensic_breakdown = {
+            "verdict": triage_decision.verdict.value,
+            "confidence": round(triage_decision.confidence, 4),
+            "root_cause": triage_decision.root_cause,
+            "executive_summary": triage_decision.executive_summary,
+            "max_reputation_score": max_rep_score,
+            "is_private_source_ip": is_ip_private_or_local(source_ip) if source_ip else None,
+            "matched_rules": sorted({str(a.get("rule_id")) for a in alerts if a.get("rule_id")}),
+            "observed_actions": sorted(
+                {str((ev.get("event") or {}).get("action")) for ev in evidence_logs if (ev.get("event") or {}).get("action")}
+            ),
+            "alert_count": len(alerts),
+            "evidence_count": evidence_count,
+            "artifact_count": len(artifacts),
+        }
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        trace_steps = _append_trace_step(
+            state.get("trace_steps"),
+            node="synthesize_verdict",
+            title="Synthesize Forensic Verdict & Report",
+            summary=(
+                f"Verdict: {triage_decision.verdict.value} "
+                f"({triage_decision.confidence * 100:.1f}% confidence) · "
+                f"{evidence_count} evidence log(s)"
+            ),
+            duration_ms=elapsed_ms,
+            details=forensic_breakdown,
+        )
+
         return {
             "verdict": triage_decision.verdict.value,
             "confidence": triage_decision.confidence,
             "llm_analysis": llm_analysis,
             "summary_markdown": markdown_report,
             "recommended_actions": triage_decision.recommended_actions,
+            "forensic_breakdown": forensic_breakdown,
+            "trace_steps": trace_steps,
         }
 
     return synthesize_verdict

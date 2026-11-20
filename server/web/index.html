@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic SOC Platform — Command Center</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <!-- ==================== SIDEBAR ==================== -->
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="sidebar-brand">
+        <div class="brand-icon" aria-hidden="true">🛡️</div>
+        <div class="brand-text">
+          <h1 class="brand-title">Agentic SOC Platform</h1>
+          <p class="brand-subtitle">SIEM &amp; AI Forensic Console</p>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" role="tablist" aria-label="SOC Sections">
+        <button class="nav-item active" data-tab="overview" role="tab" aria-selected="true">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Tổng quan &amp; Biểu đồ</span>
+        </button>
+        <button class="nav-item" data-tab="cases" role="tab" aria-selected="false">
+          <span class="nav-icon">🛡️</span>
+          <span class="nav-label">Điều tra Case</span>
+          <span id="nav-badge-cases" class="nav-badge">0</span>
+        </button>
+        <button class="nav-item" data-tab="ai-flow" role="tab" aria-selected="false">
+          <span class="nav-icon">🤖</span>
+          <span class="nav-label">Giám sát Luồng AI</span>
+          <span id="nav-badge-ai" class="nav-badge nav-badge-accent hidden">LIVE</span>
+        </button>
+        <button class="nav-item" data-tab="telemetry" role="tab" aria-selected="false">
+          <span class="nav-icon">🔎</span>
+          <span class="nav-label">Cảnh báo &amp; ECS Log</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div id="health-pill" class="status-pill status-unknown" title="Server Health (/api/v1/health)">
+          <span class="dot"></span>
+          <span id="health-text">Checking...</span>
+        </div>
+        <div class="sidebar-sync" id="sidebar-last-sync">Sync: --</div>
+        <a href="/docs" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm btn-block">
+          Swagger API Docs ↗
+        </a>
+      </div>
+    </aside>
+
+    <!-- ==================== WORKSPACE ==================== -->
+    <div class="workspace-shell">
+      <!-- Slim Top Utility Bar -->
+      <header class="topbar">
+        <div class="topbar-heading">
+          <h2 id="page-title" class="page-title">Tổng quan An ninh &amp; Phân tích Trực quan</h2>
+          <span id="page-subtitle" class="page-subtitle">Giám sát toàn cảnh sự kiện, cảnh báo và hiệu suất điều tra AI</span>
+        </div>
+
+        <div class="topbar-actions">
+          <label class="toggle-wrap" title="Tự động cập nhật dữ liệu mỗi 10 giây">
+            <input type="checkbox" id="auto-refresh-toggle" />
+            <span>Auto 10s</span>
+          </label>
+
+          <button id="refresh-btn" class="btn btn-secondary btn-sm" type="button">
+            ↻ Làm mới
+          </button>
+
+          <button id="token-btn" class="btn btn-primary btn-sm" type="button">
+            🔑 <span id="token-btn-label">Operator Token</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Global Toast / Error Banner -->
+      <div id="alert-banner" class="alert-banner hidden" role="status">
+        <span id="alert-banner-msg"></span>
+        <button id="alert-banner-close" class="icon-btn" type="button" aria-label="Đóng thông báo">✕</button>
+      </div>
+
+      <!-- Missing Token Prompt Banner -->
+      <section id="auth-empty-state" class="auth-empty hidden">
+        <div class="auth-empty-card">
+          <h3>Cần nhập Operator Token để kết nối dữ liệu SOC</h3>
+          <p>
+            Các API <code>/api/v1/cases</code>, <code>/alerts</code> và <code>/events</code> được bảo vệ bởi Bearer Token
+            (<code>ASP_OP_TOKEN</code> trong file <code>.env</code>). Token chỉ lưu cục bộ trong <code>localStorage</code> của trình duyệt.
+          </p>
+          <button id="auth-empty-open-btn" class="btn btn-primary" type="button">
+            Nhập ASP_OP_TOKEN ngay
+          </button>
+        </div>
+      </section>
+
+      <!-- Main Viewport -->
+      <main class="main-content">
+        <!-- ==================== TAB 1: OVERVIEW & CHARTS ==================== -->
+        <section id="tab-overview" class="tab-panel active">
+          <!-- KPI Row -->
+          <div class="kpi-grid">
+            <article class="kpi-card">
+              <div class="kpi-top">
+                <span class="kpi-label">Tổng số Case</span>
+                <span class="kpi-icon">📁</span>
+              </div>
+              <div id="kpi-total-cases" class="kpi-value">0</div>
+              <div id="kpi-open-cases" class="kpi-sub">0 open / 0 closed</div>
+            </article>
+
+            <article class="kpi-card kpi-danger">
+              <div class="kpi-top">
+                <span class="kpi-label">Nghiêm trọng (Crit / High)</span>
+                <span class="kpi-icon">🚨</span>
+              </div>
+              <div id="kpi-high-cases" class="kpi-value">0</div>
+              <div id="kpi-critical-count" class="kpi-sub">0 critical, 0 high</div>
+            </article>
+
+            <article class="kpi-card kpi-accent">
+              <div class="kpi-top">
+                <span class="kpi-label">AI Đã điều tra</span>
+                <span class="kpi-icon">🤖</span>
+              </div>
+              <div id="kpi-ai-cases" class="kpi-value">0</div>
+              <div id="kpi-tp-count" class="kpi-sub">0 True Positive</div>
+            </article>
+
+            <article class="kpi-card kpi-success">
+              <div class="kpi-top">
+                <span class="kpi-label">Cảnh báo tương quan</span>
+                <span class="kpi-icon">⚡</span>
+              </div>
+              <div id="kpi-total-alerts" class="kpi-value">0</div>
+              <div id="kpi-total-events-sub" class="kpi-sub">0 ECS events gần nhất</div>
+            </article>
+          </div>
+
+          <!-- Charts Row 1: Donut Charts + Timeline -->
+          <div class="charts-grid-3">
+            <article class="panel chart-card">
+              <div class="panel-header-clean">
+                <h3>Phân bổ Mức độ Case</h3>
+                <span class="chip">Severity</span>
+              </div>
+              <div id="chart-severity-donut" class="donut-container"></div>
+            </article>
+
+            <article class="panel chart-card">
+              <div class="panel-header-clean">
+                <h3>Kết luận AI Agent</h3>
+                <span class="chip">Verdict</span>
+              </div>
+              <div id="chart-verdict-donut" class="donut-container"></div>
+            </article>
+
+            <article class="panel chart-card">
+              <div class="panel-header-clean">
+                <h3>Mật độ Cảnh báo theo Thời gian</h3>
+                <span class="chip">Timeline</span>
+              </div>
+              <div id="chart-alerts-timeline" class="timeline-chart-container"></div>
+            </article>
+          </div>
+
+          <!-- Charts Row 2: Top Rules + Top Attacker IPs -->
+          <div class="charts-grid-2">
+            <article class="panel chart-card">
+              <div class="panel-header-clean">
+                <h3>Top Quy tắc Phát hiện (Detection Rules)</h3>
+                <span class="chip">MITRE / Sigma</span>
+              </div>
+              <div id="chart-top-rules" class="hbar-list"></div>
+            </article>
+
+            <article class="panel chart-card">
+              <div class="panel-header-clean">
+                <h3>Top Địa chỉ IP Nguồn Tấn công</h3>
+                <span class="chip">Source IP</span>
+              </div>
+              <div id="chart-top-ips" class="hbar-list"></div>
+            </article>
+          </div>
+
+          <!-- Priority Cases Table -->
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <h3>Case Ưu tiên Gần đây</h3>
+                <span class="panel-hint">Bấm vào một Case để chuyển sang điều tra hoặc xem luồng suy luận AI</span>
+              </div>
+              <button id="overview-goto-cases" type="button" class="btn btn-ghost btn-sm">Xem tất cả Case →</button>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Case</th>
+                    <th>Mức độ</th>
+                    <th>Source IP</th>
+                    <th>Tiêu đề</th>
+                    <th>Kết luận AI</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="overview-priority-body">
+                  <tr><td colspan="7" class="empty-cell">Chưa có dữ liệu Case.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- ==================== TAB 2: CASE INVESTIGATION ==================== -->
+        <section id="tab-cases" class="tab-panel hidden">
+          <form id="cases-filter-form" class="filter-bar">
+            <div class="filter-group">
+              <label for="filter-case-status">Trạng thái</label>
+              <select id="filter-case-status">
+                <option value="">Tất cả</option>
+                <option value="open">Open</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label for="filter-case-level">Mức độ</label>
+              <select id="filter-case-level">
+                <option value="">Tất cả</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label for="filter-case-ip">Source IP</label>
+              <input id="filter-case-ip" type="text" placeholder="e.g. 203.0.113.77" />
+            </div>
+            <div class="filter-group filter-grow">
+              <label for="filter-case-search">Tìm kiếm tiêu đề / key</label>
+              <input id="filter-case-search" type="text" placeholder="SSH brute force, ip:..." />
+            </div>
+            <div class="filter-actions">
+              <button type="submit" class="btn btn-primary btn-sm">Lọc</button>
+              <button id="cases-filter-reset" type="button" class="btn btn-secondary btn-sm">Đặt lại</button>
+            </div>
+          </form>
+
+          <div class="cases-workspace">
+            <aside class="panel case-queue-panel">
+              <div class="panel-header">
+                <h3>Danh sách Case (<span id="cases-count-label">0</span>)</h3>
+              </div>
+              <div id="case-queue-list" class="case-queue-list">
+                <div class="empty-placeholder">Chưa có dữ liệu Case.</div>
+              </div>
+            </aside>
+
+            <section id="case-detail-panel" class="panel case-detail-panel">
+              <div id="case-detail-empty" class="empty-placeholder">
+                Chọn một Case ở danh sách bên trái để xem chi tiết điều tra và chạy AI Agent.
+              </div>
+              <div id="case-detail-content" class="hidden"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 3: AI WORKFLOW MONITOR ==================== -->
+        <section id="tab-ai-flow" class="tab-panel hidden">
+          <div class="ai-toolbar panel">
+            <div class="ai-toolbar-left">
+              <label for="ai-flow-case-select" class="field-label-inline">Chọn Case giám sát:</label>
+              <select id="ai-flow-case-select" class="select-compact"></select>
+            </div>
+            <div class="ai-toolbar-actions">
+              <button id="ai-flow-replay-btn" type="button" class="btn btn-secondary btn-sm">
+                🎬 Phát lại luồng (Replay)
+              </button>
+              <button id="ai-flow-run-btn" type="button" class="btn btn-primary btn-sm">
+                ▶ Chạy &amp; Giám sát AI
+              </button>
+            </div>
+          </div>
+
+          <!-- LangGraph Visual Pipeline -->
+          <article class="panel pipeline-panel">
+            <div class="panel-header">
+              <div>
+                <h3>Sơ đồ Luồng Trạng thái LangGraph (StateGraph)</h3>
+                <span id="ai-pipeline-subtitle" class="panel-hint">Chọn một Case để quan sát quá trình điều tra của AI Agent</span>
+              </div>
+              <div id="ai-pipeline-stats" class="pipeline-stats"></div>
+            </div>
+
+            <div class="langgraph-diagram" id="langgraph-diagram">
+              <div class="lg-node" data-node="load_case_context">
+                <div class="lg-node-badge">NODE 1</div>
+                <div class="lg-node-title">Load Case Context</div>
+                <div class="lg-node-desc">Chuẩn hóa Case, Alert &amp; System Prompt</div>
+                <div class="lg-node-meta" id="lg-meta-load">--</div>
+              </div>
+
+              <div class="lg-arrow">→</div>
+
+              <div class="lg-node" data-node="agent_reasoning">
+                <div class="lg-node-badge">NODE 2</div>
+                <div class="lg-node-title">AI Reasoning (LLM)</div>
+                <div class="lg-node-desc">Suy luận &amp; Lập kế hoạch gọi Tool</div>
+                <div class="lg-node-meta" id="lg-meta-reason">--</div>
+              </div>
+
+              <div class="lg-arrow-bidirectional">
+                <span>⇄</span>
+                <small>tool_calls</small>
+              </div>
+
+              <div class="lg-node" data-node="tool_execution">
+                <div class="lg-node-badge">NODE 3</div>
+                <div class="lg-node-title">Tool Execution</div>
+                <div class="lg-node-desc">Truy vấn ECS Logs &amp; Threat Intel</div>
+                <div class="lg-node-meta" id="lg-meta-tool">--</div>
+              </div>
+
+              <div class="lg-arrow">→</div>
+
+              <div class="lg-node" data-node="synthesize_verdict">
+                <div class="lg-node-badge">NODE 4</div>
+                <div class="lg-node-title">Synthesize Verdict</div>
+                <div class="lg-node-desc">Chấm điểm Forensic &amp; Xuất báo cáo</div>
+                <div class="lg-node-meta" id="lg-meta-synth">--</div>
+              </div>
+            </div>
+          </article>
+
+          <!-- Forensic Breakdown + Execution Trace -->
+          <div class="ai-monitor-grid">
+            <article class="panel">
+              <div class="panel-header">
+                <h3>Nhật ký Thực thi Từng bước (Execution Trace)</h3>
+                <span id="ai-trace-count" class="chip">0 bước</span>
+              </div>
+              <div id="ai-trace-timeline" class="trace-timeline">
+                <div class="empty-placeholder">Chưa có dữ liệu luồng chạy AI. Hãy bấm "Chạy &amp; Giám sát AI".</div>
+              </div>
+            </article>
+
+            <div class="ai-side-col">
+              <article class="panel">
+                <div class="panel-header">
+                  <h3>Chấm điểm Bằng chứng (Forensic Scoring)</h3>
+                </div>
+                <div id="ai-forensic-breakdown" class="forensic-card-body">
+                  <div class="empty-placeholder">Chưa có dữ liệu phân tích.</div>
+                </div>
+              </article>
+
+              <article class="panel">
+                <div class="panel-header">
+                  <h3>Suy luận Trung gian của AI (LLM Notes)</h3>
+                </div>
+                <div id="ai-llm-notes" class="forensic-card-body">
+                  <div class="empty-placeholder">Chưa có ghi chú suy luận.</div>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 4: ALERTS & ECS TELEMETRY ==================== -->
+        <section id="tab-telemetry" class="tab-panel hidden">
+          <div class="subtab-bar">
+            <div class="subtab-group">
+              <button class="subtab-btn active" data-subtab="alerts" type="button">
+                ⚡ Detection Alerts (<span id="alerts-count-label">0</span>)
+              </button>
+              <button class="subtab-btn" data-subtab="events" type="button">
+                📜 Normalized ECS Events (<span id="events-count-label">0</span>)
+              </button>
+            </div>
+            <div id="telemetry-mini-summary" class="telemetry-mini-summary"></div>
+          </div>
+
+          <!-- Sub-panel: Alerts -->
+          <div id="subpanel-alerts" class="subpanel active">
+            <form id="alerts-filter-form" class="filter-bar">
+              <div class="filter-group">
+                <label for="filter-alert-rule">Rule ID</label>
+                <select id="filter-alert-rule">
+                  <option value="">All Rules</option>
+                  <option value="asp-ssh-bruteforce">asp-ssh-bruteforce</option>
+                  <option value="asp-bruteforce-then-success">asp-bruteforce-then-success</option>
+                  <option value="asp-password-spraying">asp-password-spraying</option>
+                  <option value="asp-sudo-abuse">asp-sudo-abuse</option>
+                  <option value="asp-sudo-to-root-shell">asp-sudo-to-root-shell</option>
+                  <option value="asp-web-scan-404">asp-web-scan-404</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filter-alert-level">Level</label>
+                <select id="filter-alert-level">
+                  <option value="">All Levels</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filter-alert-status">Status</label>
+                <select id="filter-alert-status">
+                  <option value="">All Status</option>
+                  <option value="new">New</option>
+                  <option value="acknowledged">Acknowledged</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="false_positive">False Positive</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filter-alert-case">Case ID</label>
+                <input id="filter-alert-case" type="number" min="1" placeholder="e.g. 1" />
+              </div>
+              <div class="filter-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Lọc</button>
+                <button id="alerts-filter-reset" type="button" class="btn btn-secondary btn-sm">Đặt lại</button>
+              </div>
+            </form>
+
+            <div class="panel table-panel">
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Mức độ</th>
+                      <th>Rule ID</th>
+                      <th>Tiêu đề</th>
+                      <th>Group Key</th>
+                      <th>Events</th>
+                      <th>Window End</th>
+                      <th>Trạng thái</th>
+                      <th>Case</th>
+                    </tr>
+                  </thead>
+                  <tbody id="alerts-table-body">
+                    <tr><td colspan="9" class="empty-cell">Chưa có alert nào.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-panel: ECS Events -->
+          <div id="subpanel-events" class="subpanel hidden">
+            <form id="events-filter-form" class="filter-bar">
+              <div class="filter-group">
+                <label for="filter-event-ip">Source IP</label>
+                <input id="filter-event-ip" type="text" placeholder="e.g. 203.0.113.77" />
+              </div>
+              <div class="filter-group">
+                <label for="filter-event-user">User Name</label>
+                <input id="filter-event-user" type="text" placeholder="e.g. root" />
+              </div>
+              <div class="filter-group">
+                <label for="filter-event-action">Event Action</label>
+                <input id="filter-event-action" type="text" placeholder="e.g. ssh_login_failed" />
+              </div>
+              <div class="filter-group">
+                <label for="filter-event-dataset">Dataset</label>
+                <select id="filter-event-dataset">
+                  <option value="">All Datasets</option>
+                  <option value="linux.auth">linux.auth</option>
+                  <option value="apache.access">apache.access</option>
+                  <option value="linux.syslog">linux.syslog</option>
+                  <option value="linux.audit">linux.audit</option>
+                  <option value="linux.kernel">linux.kernel</option>
+                  <option value="linux.package">linux.package</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filter-event-parse">Parse Status</label>
+                <select id="filter-event-parse">
+                  <option value="">All</option>
+                  <option value="ok">ok</option>
+                  <option value="unparsed">unparsed</option>
+                  <option value="error">error</option>
+                </select>
+              </div>
+              <div class="filter-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Truy vấn</button>
+                <button id="events-filter-reset" type="button" class="btn btn-secondary btn-sm">Đặt lại</button>
+              </div>
+            </form>
+
+            <div class="panel table-panel">
+              <div class="panel-header">
+                <h3>Normalized ECS Telemetry</h3>
+                <span class="panel-hint">Bấm vào một dòng để xem toàn bộ JSON ECS &amp; raw log</span>
+              </div>
+              <div class="table-scroll">
+                <table class="data-table data-table-clickable">
+                  <thead>
+                    <tr>
+                      <th>@timestamp</th>
+                      <th>Host</th>
+                      <th>Source IP</th>
+                      <th>User</th>
+                      <th>Action</th>
+                      <th>Outcome</th>
+                      <th>Dataset</th>
+                      <th>Parse</th>
+                      <th>Raw Log / Message</th>
+                    </tr>
+                  </thead>
+                  <tbody id="events-table-body">
+                    <tr><td colspan="9" class="empty-cell">Chưa tải dữ liệu ECS Events.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: OPERATOR TOKEN ==================== -->
+  <div id="token-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="token-modal-title">
+    <div class="modal-backdrop" data-close-modal="token-modal"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="token-modal-title">Cấu hình Operator Bearer Token</h3>
+        <button class="icon-btn" type="button" data-close-modal="token-modal" aria-label="Đóng">✕</button>
+      </div>
+      <form id="token-form" class="modal-body">
+        <p class="modal-desc">
+          Dán giá trị <code>ASP_OP_TOKEN</code> (tạo bởi <code>asp_admin.py create-operator</code>).
+          Token được lưu trong <code>localStorage</code> trên trình duyệt này.
+        </p>
+        <label class="field-label" for="token-input">Bearer Token</label>
+        <input
+          id="token-input"
+          type="password"
+          class="field-input"
+          placeholder="Nhập ASP_OP_TOKEN..."
+          autocomplete="off"
+          required
+        />
+        <div class="modal-footer">
+          <button id="token-clear-btn" type="button" class="btn btn-danger-outline btn-sm">Xóa Token</button>
+          <div class="modal-footer-right">
+            <button type="button" class="btn btn-secondary btn-sm" data-close-modal="token-modal">Hủy</button>
+            <button type="submit" class="btn btn-primary btn-sm">Lưu &amp; Kết nối</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: RAW ECS EVENT INSPECTOR ==================== -->
+  <div id="event-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="event-modal-title">
+    <div class="modal-backdrop" data-close-modal="event-modal"></div>
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <h3 id="event-modal-title">Chi tiết ECS Event</h3>
+        <button class="icon-btn" type="button" data-close-modal="event-modal" aria-label="Đóng">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-label">Raw Log (<code>event.original</code>)</div>
+        <pre id="event-modal-raw" class="code-block"></pre>
+        <div class="field-label">Normalized ECS JSON</div>
+        <pre id="event-modal-json" class="code-block code-block-tall"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

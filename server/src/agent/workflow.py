@@ -198,6 +198,8 @@ class LangGraphAgentInvestigator(IAgentInvestigator):
             "evidence_logs": [],
             "artifacts": [],
             "iteration_count": 0,
+            "trace_steps": [],
+            "forensic_breakdown": {},
         }
 
         final_state = self.graph.invoke(initial_state)
@@ -219,11 +221,24 @@ class LangGraphAgentInvestigator(IAgentInvestigator):
             if art.get("value")
         ]
 
+        ai_report_meta: Dict[str, Any] = {
+            "agent_verdict": verdict_val,
+            "agent_confidence": confidence,
+            "llm_class": type(self.llm).__name__,
+            "iteration_count": int(final_state.get("iteration_count", 0)),
+            "llm_analysis": final_state.get("llm_analysis") or "",
+            "recommended_actions": list(final_state.get("recommended_actions") or []),
+            "forensic_breakdown": dict(final_state.get("forensic_breakdown") or {}),
+            "trace_steps": list(final_state.get("trace_steps") or []),
+            "extracted_artifacts": [a.model_dump(mode="json") for a in artifacts_objs],
+        }
+
         return AgentReportUpdate(
             agent_verdict=AgentVerdict(verdict_val),
             agent_confidence=confidence,
             agent_report_markdown=markdown,
             extracted_artifacts=artifacts_objs,
+            ai_report=ai_report_meta,
         )
 
 
